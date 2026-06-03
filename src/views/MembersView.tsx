@@ -15,7 +15,7 @@ export default function MembersView({ role, showNotification }: { role: string |
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [form, setForm] = useState({ name: '', contact: '', plan: 'Monthly', joined_date: '', expiry_date: '', address: '', membership_expiry: '' });
+  const [form, setForm] = useState({ name: '', plan: 'Monthly', joined_date: '', expiry_date: '', address: '', membership_expiry: '' });
   const [error, setError] = useState('');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsMember, setDetailsMember] = useState<Member | null>(null);
@@ -105,7 +105,7 @@ export default function MembersView({ role, showNotification }: { role: string |
   const openAdd = () => {
     setEditingMember(null);
     const today = new Date().toISOString().split('T')[0];
-    setForm({ name: '', contact: '09', plan: defaultPlan, joined_date: today, expiry_date: calcExpiry(defaultPlan, today), address: '', membership_expiry: calcMembershipExpiry(defaultPlan, today) });
+    setForm({ name: '', plan: defaultPlan, joined_date: today, expiry_date: calcExpiry(defaultPlan, today), address: '', membership_expiry: calcMembershipExpiry(defaultPlan, today) });
     setError('');
     setShowModal(true);
   };
@@ -113,7 +113,7 @@ export default function MembersView({ role, showNotification }: { role: string |
   const openEdit = (m: Member) => {
     setEditingMember(m);
     setForm({
-      name: m.name, contact: m.contact, plan: m.plan,
+      name: m.name, plan: m.plan,
       joined_date: m.joined_date?.split('T')[0] || '',
       expiry_date: m.expiry_date?.split('T')[0] || '',
       address: m.address || '',
@@ -194,16 +194,49 @@ export default function MembersView({ role, showNotification }: { role: string |
     setRenewalType('plan');
   };
 
-  const startRenewMembership = (m: Member) => {
-    const defaultStart = getRenewalDefaultStartDate(m.membership_expiry?.split('T')[0] || null);
-    setRenewalForm({
-      plan: m.plan,
-      start_date: defaultStart,
-      expiry_date: m.expiry_date?.split('T')[0] || '',
-      membership_expiry: calcMembershipExpiry(m.plan, defaultStart)
-    });
-    setRenewalType('membership');
-  };
+   const startRenewMembership = (m: Member) => {
+     const defaultStart = getRenewalDefaultStartDate(m.membership_expiry?.split('T')[0] || null);
+     setRenewalForm({
+       plan: m.plan,
+       start_date: defaultStart,
+       expiry_date: m.expiry_date?.split('T')[0] || '',
+       membership_expiry: calcMembershipExpiry(m.plan, defaultStart)
+     });
+     setRenewalType('membership');
+   };
+
+   const handleDayClick = async (dateStr: string, hasCheckIn: boolean) => {
+     if (!detailsMember) return;
+
+     // Check if member is expired
+     if (detailsMember.status === 'Expired') {
+       if (!detailsMember.plan.includes('Non-Member')) {
+         startRenewMembership(detailsMember);
+       } else {
+         startRenewPlan(detailsMember);
+       }
+       return;
+     }
+
+     const todayStr = new Date().toLocaleDateString('sv');
+
+     if (dateStr === todayStr) {
+       if (!hasCheckIn) {
+         try {
+           const newCheckIn = await api.createCheckIn(detailsMember.member_id);
+           setMemberCheckIns(prev => [...prev, newCheckIn]);
+           setSelectedCalendarDate(dateStr);
+         } catch (err) {
+           console.error(err);
+           showNotification('Failed to check-in.', 'error');
+         }
+       } else {
+         setSelectedCalendarDate(dateStr);
+       }
+     } else {
+       setSelectedCalendarDate(dateStr);
+     }
+   };
 
   const submitPlanRenewal = async () => {
     if (!detailsMember) return;
@@ -242,29 +275,11 @@ export default function MembersView({ role, showNotification }: { role: string |
     }
   };
 
-  const handleContactChange = (value: string) => {
-    // Only allow digits
-    const digits = value.replace(/\D/g, '');
-    // Ensure it starts with 09 and max 11 digits
-    if (digits.length <= 2) {
-      setForm({ ...form, contact: '09' });
-    } else if (digits.startsWith('09')) {
-      setForm({ ...form, contact: digits.slice(0, 11) });
-    } else {
-      setForm({ ...form, contact: '09' + digits.slice(0, 9) });
-    }
-  };
-
   const handleSave = async () => {
     try {
       setError('');
-      if (!form.name || !form.contact || !form.expiry_date) { setError('Please fill in all fields.'); return; }
+      if (!form.name || !form.expiry_date) { setError('Please fill in all fields.'); return; }
       
-      if (form.contact.length !== 11 || !form.contact.startsWith('09')) {
-        setError('Contact number must be exactly 11 digits (starting with 09).');
-        return;
-      }
-
       const trimmedName = form.name.trim().toLowerCase();
       const duplicate = members.find(m => 
         m.name.trim().toLowerCase() === trimmedName && 
@@ -314,7 +329,7 @@ export default function MembersView({ role, showNotification }: { role: string |
       </header>
 
       <div className="search-bar">
-        <input type="text" className="input-field" placeholder="Search by name, ID, phone..." value={search} onChange={e => setSearch(e.target.value)} style={{maxWidth:'300px'}} />
+        <input type="text" className="input-field" placeholder="Search by name, ID..." value={search} onChange={e => setSearch(e.target.value)} style={{maxWidth:'300px'}} />
         <select className="input-field" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{maxWidth:'160px'}}>
           <option>All Status</option>
           <option>Active</option>
@@ -329,13 +344,12 @@ export default function MembersView({ role, showNotification }: { role: string |
 
       <div className="table-container">
         <table className="table-members">
-          <thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Address</th><th>Plan</th><th>Membership</th><th>Plan Expiry</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Plan</th><th>Membership</th><th>Plan Expiry</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
             {members.map((m) => (
               <tr key={m.id} className="clickable-row" onClick={() => openDetails(m)}>
                 <td>{m.member_id}</td>
                 <td><strong>{m.name}</strong></td>
-                <td>{m.contact}</td>
                 <td>{m.address || '-'}</td>
                 <td>
                   {(() => {
@@ -415,7 +429,6 @@ export default function MembersView({ role, showNotification }: { role: string |
             <h3>{editingMember ? 'Edit Member' : 'Add New Member'}</h3>
             {error && <p className="form-error">{error}</p>}
             <div className="form-group"><label>Full Name</label><input className="input-field" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-            <div className="form-group"><label>Contact</label><input type="tel" className="input-field" placeholder="09XXXXXXXXX" value={form.contact} onChange={e => handleContactChange(e.target.value)} maxLength={11} /></div>
             <div className="form-group"><label>Address</label><input className="input-field" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
             <div className="form-group"><label>Plan</label>
               <select className="input-field" value={form.plan} onChange={e => {
@@ -516,7 +529,6 @@ export default function MembersView({ role, showNotification }: { role: string |
                 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.6rem', marginBottom: '1.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
                   <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Member ID:</span> <strong>{detailsMember.member_id}</strong></p>
-                  <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Contact:</span> {detailsMember.contact}</p>
                   <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Address:</span> {detailsMember.address || '-'}</p>
                   <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Status:</span> <span className={`badge ${detailsMember.status.replace(' ', '-').toLowerCase()}`} style={{ display: 'inline-block' }}>{detailsMember.status}</span></p>
                   <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Joined Date:</span> {detailsMember.joined_date || '-'}</p>
@@ -548,9 +560,9 @@ export default function MembersView({ role, showNotification }: { role: string |
                         <label>New Plan</label>
                         <select className="input-field" value={renewalForm.plan} onChange={e => {
                           const p = e.target.value;
-                          setRenewalForm({ ...renewalForm, plan: p, expiry_date: calcExpiry(p, renewalForm.start_date) });
-                        }}>
-                          <optgroup label="━━ Members (Annual Fee Paid) ━━">
+                        setRenewalForm({ ...renewalForm, plan: p, expiry_date: calcExpiry(p, renewalForm.start_date), membership_expiry: calcMembershipExpiry(p, renewalForm.start_date) });
+                      }}>
+                        <optgroup label="━━ Members (Annual Fee Paid) ━━">
                             <option>Regular Member - Monthly (No Treadmill)</option>
                             <option>Regular Member - Monthly (With Treadmill)</option>
                             <option>Regular Member - Semi-Monthly (No Treadmill)</option>
@@ -585,15 +597,21 @@ export default function MembersView({ role, showNotification }: { role: string |
                           <label>Start Date</label>
                           <input type="date" className="input-field" value={renewalForm.start_date} onChange={e => {
                             const d = e.target.value;
-                            setRenewalForm({ ...renewalForm, start_date: d, expiry_date: calcExpiry(renewalForm.plan, d) });
-                          }} />
+                          setRenewalForm({ ...renewalForm, start_date: d, expiry_date: calcExpiry(renewalForm.plan, d), membership_expiry: calcMembershipExpiry(renewalForm.plan, d) });
+                        }} />
                         </div>
-                        <div className="form-group" style={{ margin: 0 }}>
-                          <label>New Expiry Date</label>
-                          <input type="date" className="input-field" value={renewalForm.expiry_date} onChange={e => setRenewalForm({ ...renewalForm, expiry_date: e.target.value })} />
-                        </div>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>New Expiry Date</label>
+                        <input type="date" className="input-field" value={renewalForm.expiry_date} onChange={e => setRenewalForm({ ...renewalForm, expiry_date: e.target.value })} />
                       </div>
                     </div>
+                    {!renewalForm.plan.includes('Non-Member') && (
+                      <div className="form-group" style={{ margin: 0, marginTop: '0.8rem' }}>
+                        <label>Annual Membership Expiry</label>
+                        <input type="date" className="input-field" value={renewalForm.membership_expiry} onChange={e => setRenewalForm({ ...renewalForm, membership_expiry: e.target.value })} />
+                      </div>
+                    )}
+                  </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                       <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => setRenewalType(null)}>Cancel</button>
                       <button className="btn-primary" style={{ padding: '6px 14px', fontSize: '0.85rem' }} onClick={submitPlanRenewal}>Confirm Renewal</button>
@@ -664,23 +682,23 @@ export default function MembersView({ role, showNotification }: { role: string |
                         <div key={`empty-${i}`} className="calendar-day empty"></div>
                       ))}
                       
-                      {Array.from({ length: daysInMonth }).map((_, i) => {
-                        const day = i + 1;
-                        const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                        const hasCheckIn = memberCheckIns.some(c => c.date === dateStr);
-                        const isSelected = selectedCalendarDate === dateStr;
-                        
-                        return (
-                          <div 
-                            key={`day-${day}`} 
-                            className={`calendar-day ${hasCheckIn ? 'checked-in' : ''} ${isSelected ? 'selected' : ''}`}
-                            onClick={() => setSelectedCalendarDate(dateStr)}
-                          >
-                            <span className="day-number">{day}</span>
-                            {hasCheckIn && <span className="checkin-dot"></span>}
-                          </div>
-                        );
-                      })}
+                       {Array.from({ length: daysInMonth }).map((_, i) => {
+                         const day = i + 1;
+                         const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                         const hasCheckIn = memberCheckIns.some(c => c.date === dateStr);
+                         const isSelected = selectedCalendarDate === dateStr;
+                         
+                         return (
+                           <div 
+                             key={`day-${day}`} 
+                             className={`calendar-day ${hasCheckIn ? 'checked-in' : ''} ${isSelected ? 'selected' : ''}`}
+                             onClick={() => handleDayClick(dateStr, hasCheckIn)}
+                           >
+                             <span className="day-number">{day}</span>
+                             {hasCheckIn && <span className="checkin-dot"></span>}
+                           </div>
+                         );
+                       })}
                     </div>
 
                     {selectedCalendarDate && (() => {

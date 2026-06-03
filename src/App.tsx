@@ -7,7 +7,10 @@ import MembersView from './views/MembersView.tsx';
 import AttendanceView from './views/AttendanceView.tsx';
 
 import RatesView from './views/RatesView.tsx';
+import RevenueView from './views/RevenueView.tsx';
 import LoginView from './views/LoginView.tsx';
+import AccountModal from './views/AccountModal.tsx';
+import * as api from './api';
 
 // --- Main App ---
 function App() {
@@ -25,9 +28,11 @@ function App() {
   });
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const saved = localStorage.getItem('sidebarWidth');
-    return saved ? parseInt(saved, 10) : 280;
+    return saved ? parseInt(saved, 10) : 320;
   });
   const [isResizing, setIsResizing] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ id: number; email: string; role: string } | null>(null);
 
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
@@ -83,6 +88,29 @@ function App() {
     setRole(newRole);
   };
 
+  const handleEmailChange = (newToken: string) => {
+    localStorage.setItem('token', newToken);
+    setToken(newToken);
+    fetchCurrentUser();
+  };
+
+  const fetchCurrentUser = async () => {
+    try {
+      const user = await api.fetchCurrentUser();
+      setCurrentUser(user);
+    } catch {
+      setCurrentUser(null);
+    }
+  };
+
+  useEffect(() => {
+    if (token) {
+      fetchCurrentUser();
+    } else {
+      setCurrentUser(null);
+    }
+  }, [token]);
+
   useEffect(() => {
     document.body.className = theme === 'light' ? 'light-mode' : '';
     localStorage.setItem('theme', theme);
@@ -111,6 +139,7 @@ function App() {
       case 'members': return <MembersView role={role} showNotification={showNotification} />;
       case 'attendance': return <AttendanceView showNotification={showNotification} />;
       case 'rates': return <RatesView />;
+      case 'revenue': return <RevenueView />;
       default: return <DashboardView onNavigate={setActiveTab} role={role} />;
     }
   };
@@ -155,14 +184,14 @@ function App() {
       >
         <div className="sidebar-header">
           <div className="brand" onClick={toggleSidebarCollapse} style={{ cursor: 'pointer' }} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <rect x="6" y="11" width="12" height="2" fill="#ff5722" />
               <rect x="3" y="7" width="3" height="10" rx="1" fill="#ff5722" />
               <rect x="18" y="7" width="3" height="10" rx="1" fill="#ff5722" />
               <rect x="1" y="9" width="2" height="6" rx="0.5" fill="#ff5722" opacity="0.7"/>
               <rect x="21" y="9" width="2" height="6" rx="0.5" fill="#ff5722" opacity="0.7"/>
             </svg>
-            <h1 className="brand-text">NEO<span className="brand-accent">FIT</span></h1>
+            <h1>NEO<span className="brand-accent">FIT</span></h1>
           </div>
           <button className="sidebar-close" onClick={() => setIsSidebarOpen(false)} aria-label="Close menu">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -172,9 +201,9 @@ function App() {
           </button>
         </div>
         <ul className="nav-links">
-          {['dashboard', 'members', 'attendance', 'rates']
+          {['dashboard', 'members', 'attendance', 'rates', 'revenue']
             .map(tab => {
-              const icons: Record<string, string> = { dashboard: '📊', members: '👥', attendance: '📋', rates: '💰' };
+              const icons: Record<string, string> = { dashboard: '📊', members: '👥', attendance: '📋', rates: '💰', revenue: '💵' };
               return (
                 <li 
                   key={tab} 
@@ -191,16 +220,16 @@ function App() {
         
         <div className="sidebar-footer">
           <button 
-            className="btn-secondary sidebar-action-btn" 
+            className="sidebar-action-btn" 
             onClick={() => { toggleTheme(); setIsSidebarOpen(false); }}
             title={sidebarCollapsed ? (theme === 'dark' ? 'Light Mode' : 'Dark Mode') : undefined}
           >
             <span className="nav-icon">{theme === 'dark' ? '☀️' : '🌙'}</span>
             <span className="nav-label">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
           </button>
-          
+
           <button 
-            className="btn-secondary sidebar-action-btn" 
+            className="sidebar-action-btn" 
             onClick={() => { handleLogout(); setIsSidebarOpen(false); }}
             style={{ color: 'var(--danger)' }}
             title={sidebarCollapsed ? 'Logout' : undefined}
@@ -208,6 +237,19 @@ function App() {
             <span className="nav-icon">🚪</span>
             <span className="nav-label">Logout</span>
           </button>
+
+          {currentUser && (
+            <div className="sidebar-user">
+              <button
+                className="avatar-btn"
+                onClick={() => { setShowAccountModal(true); setIsSidebarOpen(false); }}
+                title={currentUser.email}
+              >
+                {currentUser.email.charAt(0).toUpperCase()}
+              </button>
+              <span className="user-email">{currentUser.email}</span>
+            </div>
+          )}
         </div>
 
         {/* Vertical Resize Handle */}
@@ -236,6 +278,15 @@ function App() {
           {notification.type === 'success' ? '✅' : '❌'}
           {notification.message}
         </div>
+      )}
+
+      {showAccountModal && currentUser && (
+        <AccountModal
+          email={currentUser.email}
+          onClose={() => setShowAccountModal(false)}
+          onEmailChange={handleEmailChange}
+          showNotification={showNotification}
+        />
       )}
     </div>
   );

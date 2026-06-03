@@ -7,6 +7,8 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
   const [error, setError] = useState<string>('');
   const [alertTab, setAlertTab] = useState<'expired' | 'expiring'>('expired');
 
+  const currency = (n: number) => `₱${n.toLocaleString()}`;
+
   useEffect(() => {
     api.fetchDashboard()
       .then(setStats)
@@ -43,6 +45,21 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
         <div className="stat-card">
           <div className="stat-title">Total Members</div>
           <div className="stat-value">{stats?.totalMembers ?? '—'}</div>
+        </div>
+      </section>
+
+      <section className="stats-grid" style={{ marginTop: '1rem' }}>
+        <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('revenue')}>
+          <div className="stat-title">Today's Revenue</div>
+          <div className="stat-value" style={{ color: 'var(--accent)' }}>{stats ? currency(stats.todayRevenue) : '—'}</div>
+        </div>
+        <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('revenue')}>
+          <div className="stat-title">Month Revenue</div>
+          <div className="stat-value" style={{ color: 'var(--success)' }}>{stats ? currency(stats.thisMonthRevenue) : '—'}</div>
+        </div>
+        <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('revenue')}>
+          <div className="stat-title">Year Revenue</div>
+          <div className="stat-value" style={{ color: '#00e5ff' }}>{stats ? currency(stats.thisYearRevenue) : '—'}</div>
         </div>
       </section>
 
@@ -97,7 +114,6 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
                   <div key={m.id} className="member-alert-item">
                     <div className="member-alert-info">
                       <strong>{m.name}</strong>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📞 {m.contact}</span>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📋 {m.plan}</span>
                     </div>
                     <div className="member-alert-meta">
@@ -121,7 +137,6 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
                   <div key={m.id} className="member-alert-item">
                     <div className="member-alert-info">
                       <strong>{m.name}</strong>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📞 {m.contact}</span>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📋 {m.plan}</span>
                     </div>
                     <div className="member-alert-meta">

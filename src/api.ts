@@ -35,15 +35,23 @@ export const login = (email: string, password: string) =>
 
 export const logout = () => request('/logout', { method: 'POST' });
 
+export const fetchCurrentUser = () => request('/users/me');
+
+export const changePassword = (currentPassword: string, newPassword: string) =>
+  request('/users/me/password', { method: 'PUT', body: JSON.stringify({ currentPassword, newPassword }) });
+
+export const changeEmail = (newEmail: string, password: string) =>
+  request('/users/me/email', { method: 'PUT', body: JSON.stringify({ newEmail, password }) });
+
 // Dashboard
 export const fetchDashboard = () => request('/dashboard');
 
 // Members
-export const fetchMembers = (search = '', status = '') =>
-  request(`/members?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`);
+export const fetchMembers = (search = '', status = '', plan = '', year?: number, month?: number) =>
+  request(`/members?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&plan=${encodeURIComponent(plan)}${year != null && month != null ? `&year=${year}&month=${month}` : ''}`);
 
 export const createMember = (data: {
-  name: string; contact: string; plan: string; joined_date: string; expiry_date: string; address?: string;
+  name: string; plan: string; joined_date: string; expiry_date: string; address?: string;
 }) => request('/members', { method: 'POST', body: JSON.stringify(data) });
 
 export const updateMember = (id: number, data: Record<string, string>) =>
@@ -62,9 +70,36 @@ export const fetchCheckIns = (date?: string) =>
 export const createCheckIn = (memberId: string) =>
   request('/checkins', { method: 'POST', body: JSON.stringify({ member_id: memberId }) });
 
+// Revenue
+export const fetchRevenue = (year: number, month: number) =>
+  request(`/revenue?year=${year}&month=${month}`);
+
+export const fetchPayments = (date: string) =>
+  request(`/payments?date=${encodeURIComponent(date)}`);
+
+export const exportRevenue = async (year: number, month: number) => {
+  const token = localStorage.getItem('token');
+  const res = await fetch(`${API_BASE}/revenue/export?year=${year}&month=${month}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Failed to export report.');
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `NeoFit_Revenue_${year}_${month}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 // Settings
 export const fetchSettings = () => request('/settings');
 
 export const saveSettings = (data: {
-  gymName: string; contact: string; address: string; announcement: string;
+  gymName: string; address: string; announcement: string;
 }) => request('/settings', { method: 'PUT', body: JSON.stringify(data) });

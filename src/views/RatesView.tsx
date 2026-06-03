@@ -1,14 +1,7 @@
+import { rateTable } from '../rates';
+
 export default function RatesView() {
-  const rates = [
-    { category: 'Regular Members', type: 'No Treadmill', monthly: 600, semi: 300, daily: 60 },
-    { category: 'Regular Members', type: 'With Treadmill', monthly: 800, semi: 400, daily: 80 },
-    { category: 'Student/Senior Members', type: 'No Treadmill', monthly: 500, semi: 250, daily: 50 },
-    { category: 'Student/Senior Members', type: 'With Treadmill', monthly: 700, semi: 350, daily: 70 },
-    { category: 'Regular Non-Members', type: 'No Treadmill', monthly: 700, semi: 350, daily: 70 },
-    { category: 'Regular Non-Members', type: 'With Treadmill', monthly: 900, semi: 450, daily: 90 },
-    { category: 'Student/Senior Non-Members', type: 'No Treadmill', monthly: 600, semi: 300, daily: 60 },
-    { category: 'Student/Senior Non-Members', type: 'With Treadmill', monthly: 800, semi: 400, daily: 80 },
-  ];
+  const rates = rateTable;
 
   return (
     <>
