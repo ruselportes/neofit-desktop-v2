@@ -15,7 +15,7 @@ export default function MembersView({ role, showNotification }: { role: string |
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [form, setForm] = useState({ name: '', plan: 'Monthly', joined_date: '', expiry_date: '', address: '', membership_expiry: '' });
+  const [form, setForm] = useState({ name: '', contact: '', plan: 'Monthly', joined_date: '', expiry_date: '', address: '', membership_expiry: '' });
   const [error, setError] = useState('');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsMember, setDetailsMember] = useState<Member | null>(null);
@@ -105,7 +105,7 @@ export default function MembersView({ role, showNotification }: { role: string |
   const openAdd = () => {
     setEditingMember(null);
     const today = new Date().toISOString().split('T')[0];
-    setForm({ name: '', plan: defaultPlan, joined_date: today, expiry_date: calcExpiry(defaultPlan, today), address: '', membership_expiry: calcMembershipExpiry(defaultPlan, today) });
+    setForm({ name: '', contact: '09', plan: defaultPlan, joined_date: today, expiry_date: calcExpiry(defaultPlan, today), address: '', membership_expiry: calcMembershipExpiry(defaultPlan, today) });
     setError('');
     setShowModal(true);
   };
@@ -113,7 +113,7 @@ export default function MembersView({ role, showNotification }: { role: string |
   const openEdit = (m: Member) => {
     setEditingMember(m);
     setForm({
-      name: m.name, plan: m.plan,
+      name: m.name, contact: m.contact, plan: m.plan,
       joined_date: m.joined_date?.split('T')[0] || '',
       expiry_date: m.expiry_date?.split('T')[0] || '',
       address: m.address || '',
@@ -275,11 +275,27 @@ export default function MembersView({ role, showNotification }: { role: string |
     }
   };
 
+  const handleContactChange = (value: string) => {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length <= 2) {
+      setForm({ ...form, contact: '09' });
+    } else if (digits.startsWith('09')) {
+      setForm({ ...form, contact: digits.slice(0, 11) });
+    } else {
+      setForm({ ...form, contact: '09' + digits.slice(0, 9) });
+    }
+  };
+
   const handleSave = async () => {
     try {
       setError('');
-      if (!form.name || !form.expiry_date) { setError('Please fill in all fields.'); return; }
+      if (!form.name || !form.contact || !form.expiry_date) { setError('Please fill in all fields.'); return; }
       
+      if (form.contact.length !== 11 || !form.contact.startsWith('09')) {
+        setError('Contact number must be exactly 11 digits (starting with 09).');
+        return;
+      }
+
       const trimmedName = form.name.trim().toLowerCase();
       const duplicate = members.find(m => 
         m.name.trim().toLowerCase() === trimmedName && 
@@ -329,7 +345,7 @@ export default function MembersView({ role, showNotification }: { role: string |
       </header>
 
       <div className="search-bar">
-        <input type="text" className="input-field" placeholder="Search by name, ID..." value={search} onChange={e => setSearch(e.target.value)} style={{maxWidth:'300px'}} />
+        <input type="text" className="input-field" placeholder="Search by name, ID, phone..." value={search} onChange={e => setSearch(e.target.value)} style={{maxWidth:'300px'}} />
         <select className="input-field" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{maxWidth:'160px'}}>
           <option>All Status</option>
           <option>Active</option>
@@ -344,12 +360,13 @@ export default function MembersView({ role, showNotification }: { role: string |
 
       <div className="table-container">
         <table className="table-members">
-          <thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Plan</th><th>Membership</th><th>Plan Expiry</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>Address</th><th>Plan</th><th>Membership</th><th>Plan Expiry</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
             {members.map((m) => (
               <tr key={m.id} className="clickable-row" onClick={() => openDetails(m)}>
                 <td>{m.member_id}</td>
                 <td><strong>{m.name}</strong></td>
+                <td>{m.contact}</td>
                 <td>{m.address || '-'}</td>
                 <td>
                   {(() => {
@@ -429,6 +446,7 @@ export default function MembersView({ role, showNotification }: { role: string |
             <h3>{editingMember ? 'Edit Member' : 'Add New Member'}</h3>
             {error && <p className="form-error">{error}</p>}
             <div className="form-group"><label>Full Name</label><input className="input-field" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div className="form-group"><label>Contact</label><input type="tel" className="input-field" placeholder="09XXXXXXXXX" value={form.contact} onChange={e => handleContactChange(e.target.value)} maxLength={11} /></div>
             <div className="form-group"><label>Address</label><input className="input-field" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
             <div className="form-group"><label>Plan</label>
               <select className="input-field" value={form.plan} onChange={e => {
@@ -529,6 +547,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.6rem', marginBottom: '1.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
                   <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Member ID:</span> <strong>{detailsMember.member_id}</strong></p>
+                  <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Contact:</span> {detailsMember.contact}</p>
                   <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Address:</span> {detailsMember.address || '-'}</p>
                   <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Status:</span> <span className={`badge ${detailsMember.status.replace(' ', '-').toLowerCase()}`} style={{ display: 'inline-block' }}>{detailsMember.status}</span></p>
                   <p style={{ margin: 0 }}><span style={{ color: 'var(--text-muted)' }}>Joined Date:</span> {detailsMember.joined_date || '-'}</p>

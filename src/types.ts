@@ -2,6 +2,7 @@ export interface Member {
   id: number;
   member_id: string;
   name: string;
+  contact: string;
   plan: string;
   status: string;
   joined_date?: string;
@@ -40,6 +41,7 @@ export interface DashboardStats {
 
 export interface GymSettings {
   gymName: string;
+  contact: string;
   address: string;
   announcement: string;
 }

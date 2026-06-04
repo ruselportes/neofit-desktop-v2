@@ -67,6 +67,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     member_id TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
+    contact TEXT NOT NULL,
     plan TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'Active',
     joined_date DATE,
@@ -89,6 +90,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     gym_name TEXT NOT NULL DEFAULT 'NeoFit Fitness Gym',
+    contact TEXT NOT NULL DEFAULT '',
     address TEXT NOT NULL DEFAULT '',
     announcement TEXT NOT NULL DEFAULT ''
   );
@@ -121,7 +123,7 @@ if (userCount.count === 0) {
 // Seed default settings if none exist
 const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get();
 if (settingsCount.count === 0) {
-  db.prepare('INSERT INTO settings (id, gym_name, address, announcement) VALUES (1, ?, ?, ?)').run('NeoFit Fitness Gym', '', '');
+  db.prepare('INSERT INTO settings (id, gym_name, contact, address, announcement) VALUES (1, ?, ?, ?, ?)').run('NeoFit Fitness Gym', '', '', '');
 }
 
 // Seed demo members (one for each of the 24 plans) if SEED_DEMO env var is true
@@ -133,35 +135,35 @@ if (process.env.SEED_DEMO === 'true') {
   db.exec('DELETE FROM members');
   
   const demoPlans = [
-    { name: 'John Doe', plan: 'Regular Member - Monthly (No Treadmill)', address: '123 Main St, Quezon City' },
-    { name: 'Jane Smith', plan: 'Regular Member - Monthly (With Treadmill)', address: '456 Oak Rd, Makati City' },
-    { name: 'Michael Johnson', plan: 'Regular Member - Semi-Monthly (No Treadmill)', address: '789 Pine Ave, Pasig City' },
-    { name: 'Emily Davis', plan: 'Regular Member - Semi-Monthly (With Treadmill)', address: '101 Maple Blvd, Mandaluyong City' },
-    { name: 'David Brown', plan: 'Regular Member - Daily (No Treadmill)', address: '202 Birch Ct, Taguig City' },
-    { name: 'Sarah Miller', plan: 'Regular Member - Daily (With Treadmill)', address: '303 Cedar Dr, Parañaque City' },
-    { name: 'James Wilson', plan: 'Student/Senior Member - Monthly (No Treadmill)', address: '404 Redwood Ln, Las Piñas City' },
-    { name: 'Patricia Moore', plan: 'Student/Senior Member - Monthly (With Treadmill)', address: '505 Willow Way, Muntinlupa City' },
-    { name: 'Robert Taylor', plan: 'Student/Senior Member - Semi-Monthly (No Treadmill)', address: '606 Cypress St, Valenzuela City' },
-    { name: 'Linda Anderson', plan: 'Student/Senior Member - Semi-Monthly (With Treadmill)', address: '707 Alder Ave, Caloocan City' },
-    { name: 'William Thomas', plan: 'Student/Senior Member - Daily (No Treadmill)', address: '808 Spruce St, Malabon City' },
-    { name: 'Elizabeth Jackson', plan: 'Student/Senior Member - Daily (With Treadmill)', address: '909 Fir Rd, Navotas City' },
-    { name: 'Richard White', plan: 'Regular Non-Member - Monthly (No Treadmill)', address: '111 Ash St, Marikina City' },
-    { name: 'Barbara Harris', plan: 'Regular Non-Member - Monthly (With Treadmill)', address: '222 Beech Blvd, San Juan City' },
-    { name: 'Joseph Martin', plan: 'Regular Non-Member - Semi-Monthly (No Treadmill)', address: '333 Elm Rd, Pasay City' },
-    { name: 'Susan Thompson', plan: 'Regular Non-Member - Semi-Monthly (With Treadmill)', address: '444 Larch Ct, Manila' },
-    { name: 'Thomas Garcia', plan: 'Regular Non-Member - Daily (No Treadmill)', address: '555 Linden Dr, Quezon City' },
-    { name: 'Jessica Martinez', plan: 'Regular Non-Member - Daily (With Treadmill)', address: '666 Poplar St, Makati City' },
-    { name: 'Charles Robinson', plan: 'Student/Senior Non-Member - Monthly (No Treadmill)', address: '777 Sycamore Ave, Pasig City' },
-    { name: 'Karen Clark', plan: 'Student/Senior Non-Member - Monthly (With Treadmill)', address: '888 Walnut St, Mandaluyong City' },
-    { name: 'Christopher Rodriguez', plan: 'Student/Senior Non-Member - Semi-Monthly (No Treadmill)', address: '999 Chestnut Dr, Taguig City' },
-    { name: 'Nancy Lewis', plan: 'Student/Senior Non-Member - Semi-Monthly (With Treadmill)', address: '124 Magnolia St, Parañaque City' },
-    { name: 'Daniel Lee', plan: 'Student/Senior Non-Member - Daily (No Treadmill)', address: '135 Palm Rd, Las Piñas City' },
-    { name: 'Lisa Walker', plan: 'Student/Senior Non-Member - Daily (With Treadmill)', address: '146 Olive Ct, Muntinlupa City' }
+    { name: 'John Doe', plan: 'Regular Member - Monthly (No Treadmill)', contact: '09171234501', address: '123 Main St, Quezon City' },
+    { name: 'Jane Smith', plan: 'Regular Member - Monthly (With Treadmill)', contact: '09171234502', address: '456 Oak Rd, Makati City' },
+    { name: 'Michael Johnson', plan: 'Regular Member - Semi-Monthly (No Treadmill)', contact: '09171234503', address: '789 Pine Ave, Pasig City' },
+    { name: 'Emily Davis', plan: 'Regular Member - Semi-Monthly (With Treadmill)', contact: '09171234504', address: '101 Maple Blvd, Mandaluyong City' },
+    { name: 'David Brown', plan: 'Regular Member - Daily (No Treadmill)', contact: '09171234505', address: '202 Birch Ct, Taguig City' },
+    { name: 'Sarah Miller', plan: 'Regular Member - Daily (With Treadmill)', contact: '09171234506', address: '303 Cedar Dr, Parañaque City' },
+    { name: 'James Wilson', plan: 'Student/Senior Member - Monthly (No Treadmill)', contact: '09171234507', address: '404 Redwood Ln, Las Piñas City' },
+    { name: 'Patricia Moore', plan: 'Student/Senior Member - Monthly (With Treadmill)', contact: '09171234508', address: '505 Willow Way, Muntinlupa City' },
+    { name: 'Robert Taylor', plan: 'Student/Senior Member - Semi-Monthly (No Treadmill)', contact: '09171234509', address: '606 Cypress St, Valenzuela City' },
+    { name: 'Linda Anderson', plan: 'Student/Senior Member - Semi-Monthly (With Treadmill)', contact: '09171234510', address: '707 Alder Ave, Caloocan City' },
+    { name: 'William Thomas', plan: 'Student/Senior Member - Daily (No Treadmill)', contact: '09171234511', address: '808 Spruce St, Malabon City' },
+    { name: 'Elizabeth Jackson', plan: 'Student/Senior Member - Daily (With Treadmill)', contact: '09171234512', address: '909 Fir Rd, Navotas City' },
+    { name: 'Richard White', plan: 'Regular Non-Member - Monthly (No Treadmill)', contact: '09171234513', address: '111 Ash St, Marikina City' },
+    { name: 'Barbara Harris', plan: 'Regular Non-Member - Monthly (With Treadmill)', contact: '09171234514', address: '222 Beech Blvd, San Juan City' },
+    { name: 'Joseph Martin', plan: 'Regular Non-Member - Semi-Monthly (No Treadmill)', contact: '09171234515', address: '333 Elm Rd, Pasay City' },
+    { name: 'Susan Thompson', plan: 'Regular Non-Member - Semi-Monthly (With Treadmill)', contact: '09171234516', address: '444 Larch Ct, Manila' },
+    { name: 'Thomas Garcia', plan: 'Regular Non-Member - Daily (No Treadmill)', contact: '09171234517', address: '555 Linden Dr, Quezon City' },
+    { name: 'Jessica Martinez', plan: 'Regular Non-Member - Daily (With Treadmill)', contact: '09171234518', address: '666 Poplar St, Makati City' },
+    { name: 'Charles Robinson', plan: 'Student/Senior Non-Member - Monthly (No Treadmill)', contact: '09171234519', address: '777 Sycamore Ave, Pasig City' },
+    { name: 'Karen Clark', plan: 'Student/Senior Non-Member - Monthly (With Treadmill)', contact: '09171234520', address: '888 Walnut St, Mandaluyong City' },
+    { name: 'Christopher Rodriguez', plan: 'Student/Senior Non-Member - Semi-Monthly (No Treadmill)', contact: '09171234521', address: '999 Chestnut Dr, Taguig City' },
+    { name: 'Nancy Lewis', plan: 'Student/Senior Non-Member - Semi-Monthly (With Treadmill)', contact: '09171234522', address: '124 Magnolia St, Parañaque City' },
+    { name: 'Daniel Lee', plan: 'Student/Senior Non-Member - Daily (No Treadmill)', contact: '09171234523', address: '135 Palm Rd, Las Piñas City' },
+    { name: 'Lisa Walker', plan: 'Student/Senior Non-Member - Daily (With Treadmill)', contact: '09171234524', address: '146 Olive Ct, Muntinlupa City' }
   ];
 
   const insertStmt = db.prepare(`
-    INSERT INTO members (member_id, name, plan, status, joined_date, expiry_date, address, membership_expiry)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO members (member_id, name, contact, plan, status, joined_date, expiry_date, address, membership_expiry)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const checkInStmt = db.prepare(`
@@ -206,7 +208,7 @@ if (process.env.SEED_DEMO === 'true') {
 
     const status = calculateStatus({ joined_date: joined_date_str, expiry_date });
 
-    insertStmt.run(member_id, m.name, m.plan, status, joined_date_str, expiry_date, m.address, membership_expiry);
+    insertStmt.run(member_id, m.name, m.contact, m.plan, status, joined_date_str, expiry_date, m.address, membership_expiry);
 
     // Generate historical check-ins from joinedDate up to the minimum of (today, expiryDate)
     const startDate = new Date(joinedDate);
@@ -424,20 +426,20 @@ app.get('/api/dashboard', authMiddleware, (_req, res) => {
     }));
 
     const expiringMembers = db.prepare(`
-      SELECT id, member_id, name, plan, status, expiry_date, membership_expiry 
-      FROM members
-      WHERE status = 'Expiring Soon'
-         OR (membership_expiry IS NOT NULL AND membership_expiry BETWEEN date('now', 'localtime') AND date('now', 'localtime', '+7 days'))
-      ORDER BY CASE WHEN status = 'Expiring Soon' THEN expiry_date ELSE membership_expiry END ASC
+    SELECT id, member_id, name, contact, plan, status, expiry_date, membership_expiry 
+    FROM members
+    WHERE status = 'Expiring Soon'
+       OR (membership_expiry IS NOT NULL AND membership_expiry BETWEEN date('now', 'localtime') AND date('now', 'localtime', '+7 days'))
+    ORDER BY CASE WHEN status = 'Expiring Soon' THEN expiry_date ELSE membership_expiry END ASC
     `).all();
 
     const expiredMembers = db.prepare(`
-      SELECT id, member_id, name, plan, status, expiry_date, membership_expiry 
-      FROM members
-      WHERE status = 'Expired'
-         OR (membership_expiry IS NOT NULL AND membership_expiry < date('now', 'localtime'))
-      ORDER BY CASE WHEN status = 'Expired' THEN expiry_date ELSE membership_expiry END DESC
-      LIMIT 50
+    SELECT id, member_id, name, contact, plan, status, expiry_date, membership_expiry 
+    FROM members
+    WHERE status = 'Expired'
+       OR (membership_expiry IS NOT NULL AND membership_expiry < date('now', 'localtime'))
+    ORDER BY CASE WHEN status = 'Expired' THEN expiry_date ELSE membership_expiry END DESC
+    LIMIT 50
     `).all();
 
     const now = new Date();
@@ -486,9 +488,9 @@ app.get('/api/members', authMiddleware, (req, res) => {
   const params = [];
   
   if (search) {
-    query += ' AND (name LIKE ? OR member_id LIKE ?';
+    query += ' AND (name LIKE ? OR member_id LIKE ? OR contact LIKE ?';
     const s = `%${search}%`;
-    params.push(s, s);
+    params.push(s, s, s);
     
     // Smart ID matching:
     // If search is just a number (e.g., "12" or "3"), pad it to match "M-012" or "M-003"
@@ -626,8 +628,8 @@ app.get('/api/members', authMiddleware, (req, res) => {
 });
 
 app.post('/api/members', authMiddleware, (req, res) => {
-  const { name, plan, joined_date, expiry_date, address, membership_expiry } = req.body;
-  if (!name || !plan) return res.status(400).json({ error: 'Name and plan are required.' });
+  const { name, contact, plan, joined_date, expiry_date, address, membership_expiry } = req.body;
+  if (!name || !contact || !plan) return res.status(400).json({ error: 'Name, contact, and plan are required.' });
   
   const existingName = db.prepare('SELECT id FROM members WHERE LOWER(name) = LOWER(?)').get(name.trim());
   if (existingName) {
@@ -639,9 +641,9 @@ app.post('/api/members', authMiddleware, (req, res) => {
   const status = calculateStatus(tempMember);
   
   db.prepare(`
-    INSERT INTO members (member_id, name, plan, status, joined_date, expiry_date, address, membership_expiry)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(member_id, name.trim(), plan, status, joined_date || null, expiry_date || null, address || '', membership_expiry || null);
+    INSERT INTO members (member_id, name, contact, plan, status, joined_date, expiry_date, address, membership_expiry)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(member_id, name.trim(), contact, plan, status, joined_date || null, expiry_date || null, address || '', membership_expiry || null);
   
   const member = db.prepare('SELECT * FROM members WHERE member_id = ?').get(member_id);
   res.status(201).json(member);
@@ -649,7 +651,7 @@ app.post('/api/members', authMiddleware, (req, res) => {
 
 app.put('/api/members/:id', authMiddleware, (req, res) => {
   const { id } = req.params;
-  const { name, plan, joined_date, expiry_date, address, membership_expiry } = req.body;
+  const { name, contact, plan, joined_date, expiry_date, address, membership_expiry } = req.body;
   
   const existing = db.prepare('SELECT * FROM members WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Member not found.' });
@@ -665,10 +667,11 @@ app.put('/api/members/:id', authMiddleware, (req, res) => {
   const status = calculateStatus(tempMember);
   
   db.prepare(`
-    UPDATE members SET name = ?, plan = ?, status = ?, joined_date = ?, expiry_date = ?, address = ?, membership_expiry = ?, updated_at = CURRENT_TIMESTAMP
+    UPDATE members SET name = ?, contact = ?, plan = ?, status = ?, joined_date = ?, expiry_date = ?, address = ?, membership_expiry = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     name ? name.trim() : existing.name,
+    contact || existing.contact,
     plan || existing.plan,
     status,
     joined_date || existing.joined_date,
@@ -828,19 +831,20 @@ app.get('/api/payments', authMiddleware, (req, res) => {
 // ─── Settings ───────────────────────────────────────────────
 app.get('/api/settings', authMiddleware, (_req, res) => {
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', address: '', announcement: '' });
+  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '' });
   res.json({
     gymName: settings.gym_name,
+    contact: settings.contact,
     address: settings.address,
     announcement: settings.announcement
   });
 });
 
 app.put('/api/settings', authMiddleware, (req, res) => {
-  const { gymName, address, announcement } = req.body;
+  const { gymName, contact, address, announcement } = req.body;
   db.prepare(`
-    UPDATE settings SET gym_name = ?, address = ?, announcement = ? WHERE id = 1
-  `).run(gymName || '', address || '', announcement || '');
+    UPDATE settings SET gym_name = ?, contact = ?, address = ?, announcement = ? WHERE id = 1
+  `).run(gymName || '', contact || '', address || '', announcement || '');
   res.json({ message: 'Settings saved.' });
 });
 

@@ -164,6 +164,7 @@ export default function RevenueView() {
   const chartOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: true,
+    aspectRatio: 4.5,
     plugins: {
       legend: { display: false },
       tooltip: {

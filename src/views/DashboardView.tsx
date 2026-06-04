@@ -114,6 +114,7 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
                   <div key={m.id} className="member-alert-item">
                     <div className="member-alert-info">
                       <strong>{m.name}</strong>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📞 {m.contact}</span>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📋 {m.plan}</span>
                     </div>
                     <div className="member-alert-meta">
@@ -137,6 +138,7 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
                   <div key={m.id} className="member-alert-item">
                     <div className="member-alert-info">
                       <strong>{m.name}</strong>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📞 {m.contact}</span>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📋 {m.plan}</span>
                     </div>
                     <div className="member-alert-meta">

@@ -51,7 +51,7 @@ export const fetchMembers = (search = '', status = '', plan = '', year?: number,
   request(`/members?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&plan=${encodeURIComponent(plan)}${year != null && month != null ? `&year=${year}&month=${month}` : ''}`);
 
 export const createMember = (data: {
-  name: string; plan: string; joined_date: string; expiry_date: string; address?: string;
+  name: string; contact: string; plan: string; joined_date: string; expiry_date: string; address?: string;
 }) => request('/members', { method: 'POST', body: JSON.stringify(data) });
 
 export const updateMember = (id: number, data: Record<string, string>) =>
@@ -101,5 +101,5 @@ export const exportRevenue = async (year: number, month: number) => {
 export const fetchSettings = () => request('/settings');
 
 export const saveSettings = (data: {
-  gymName: string; address: string; announcement: string;
+  gymName: string; contact: string; address: string; announcement: string;
 }) => request('/settings', { method: 'PUT', body: JSON.stringify(data) });

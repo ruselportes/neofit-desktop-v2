@@ -24,7 +24,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
       return;
     }
     const afterPrefix = value.slice(2).replace(/\D/g, '');
-    setMemberId('M-' + afterPrefix.slice(0, 3));
+    setMemberId('M-' + afterPrefix);
   };
 
   const loadCheckIns = useCallback(() => {
@@ -218,7 +218,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
           value={memberId} onChange={e => handleMemberIdChange(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleCheckIn()}
           style={{ maxWidth: '300px' }}
-          maxLength={5}
+          maxLength={10}
           disabled={selectedDate !== today}
         />
         <button className="btn-primary" onClick={handleCheckIn} disabled={selectedDate !== today}>Check In</button>

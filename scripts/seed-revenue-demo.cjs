@@ -17,24 +17,24 @@ const pad = (n) => String(n).padStart(2, '0');
 
 const plans = [
   // Monthly members (8)
-  { name: 'John Doe', plan: 'Regular Member - Monthly (No Treadmill)', address: '123 Main St' },
-  { name: 'Jane Smith', plan: 'Regular Member - Monthly (With Treadmill)', address: '456 Oak Rd' },
-  { name: 'Mike Johnson', plan: 'Student/Senior Member - Monthly (No Treadmill)', address: '789 Pine Ave' },
-  { name: 'Emily Davis', plan: 'Student/Senior Member - Monthly (With Treadmill)', address: '101 Maple Blvd' },
-  { name: 'David Brown', plan: 'Regular Non-Member - Monthly (No Treadmill)', address: '202 Birch Ct' },
-  { name: 'Sarah Wilson', plan: 'Regular Non-Member - Monthly (With Treadmill)', address: '303 Cedar Dr' },
-  { name: 'Anna Taylor', plan: 'Student/Senior Non-Member - Monthly (No Treadmill)', address: '404 Elm St' },
-  { name: 'Robert Lee', plan: 'Student/Senior Non-Member - Monthly (With Treadmill)', address: '505 Oak Ave' },
+  { name: 'John Doe', plan: 'Regular Member - Monthly (No Treadmill)', contact: '09171234501', address: '123 Main St' },
+  { name: 'Jane Smith', plan: 'Regular Member - Monthly (With Treadmill)', contact: '09171234502', address: '456 Oak Rd' },
+  { name: 'Mike Johnson', plan: 'Student/Senior Member - Monthly (No Treadmill)', contact: '09171234503', address: '789 Pine Ave' },
+  { name: 'Emily Davis', plan: 'Student/Senior Member - Monthly (With Treadmill)', contact: '09171234504', address: '101 Maple Blvd' },
+  { name: 'David Brown', plan: 'Regular Non-Member - Monthly (No Treadmill)', contact: '09171234505', address: '202 Birch Ct' },
+  { name: 'Sarah Wilson', plan: 'Regular Non-Member - Monthly (With Treadmill)', contact: '09171234506', address: '303 Cedar Dr' },
+  { name: 'Anna Taylor', plan: 'Student/Senior Non-Member - Monthly (No Treadmill)', contact: '09171234507', address: '404 Elm St' },
+  { name: 'Robert Lee', plan: 'Student/Senior Non-Member - Monthly (With Treadmill)', contact: '09171234508', address: '505 Oak Ave' },
   // Semi-Monthly members (4)
-  { name: 'Lisa Anderson', plan: 'Regular Member - Semi-Monthly (No Treadmill)', address: '606 Pine Rd' },
-  { name: 'James Martin', plan: 'Regular Member - Semi-Monthly (With Treadmill)', address: '707 Birch Ln' },
-  { name: 'Mary Jackson', plan: 'Student/Senior Non-Member - Semi-Monthly (No Treadmill)', address: '808 Maple Dr' },
-  { name: 'William White', plan: 'Regular Non-Member - Semi-Monthly (With Treadmill)', address: '909 Cedar Ct' },
+  { name: 'Lisa Anderson', plan: 'Regular Member - Semi-Monthly (No Treadmill)', contact: '09171234509', address: '606 Pine Rd' },
+  { name: 'James Martin', plan: 'Regular Member - Semi-Monthly (With Treadmill)', contact: '09171234510', address: '707 Birch Ln' },
+  { name: 'Mary Jackson', plan: 'Student/Senior Non-Member - Semi-Monthly (No Treadmill)', contact: '09171234511', address: '808 Maple Dr' },
+  { name: 'William White', plan: 'Regular Non-Member - Semi-Monthly (With Treadmill)', contact: '09171234512', address: '909 Cedar Ct' },
   // Daily members (4)
-  { name: 'Patricia Harris', plan: 'Regular Member - Daily (No Treadmill)', address: '111 Walnut St' },
-  { name: 'Thomas Clark', plan: 'Student/Senior Member - Daily (With Treadmill)', address: '222 Spruce Ave' },
-  { name: 'Jennifer Lewis', plan: 'Regular Non-Member - Daily (No Treadmill)', address: '333 Ash Blvd' },
-  { name: 'Charles Walker', plan: 'Student/Senior Non-Member - Daily (With Treadmill)', address: '444 Fir Ct' },
+  { name: 'Patricia Harris', plan: 'Regular Member - Daily (No Treadmill)', contact: '09171234513', address: '111 Walnut St' },
+  { name: 'Thomas Clark', plan: 'Student/Senior Member - Daily (With Treadmill)', contact: '09171234514', address: '222 Spruce Ave' },
+  { name: 'Jennifer Lewis', plan: 'Regular Non-Member - Daily (No Treadmill)', contact: '09171234515', address: '333 Ash Blvd' },
+  { name: 'Charles Walker', plan: 'Student/Senior Non-Member - Daily (With Treadmill)', contact: '09171234516', address: '444 Fir Ct' },
 ];
 
 const rateTable = {
@@ -81,8 +81,8 @@ function calcMembershipExpiry(plan, joinedDate) {
 }
 
 const insertMember = db.prepare(`
-  INSERT INTO members (member_id, name, plan, status, joined_date, expiry_date, address, membership_expiry)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO members (member_id, name, contact, plan, status, joined_date, expiry_date, address, membership_expiry)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const insertCheckin = db.prepare(`
@@ -112,7 +112,7 @@ plans.forEach((p, index) => {
   const membershipExpiry = calcMembershipExpiry(p.plan, joinedDate);
   const { period } = parsePlan(p.plan);
 
-  insertMember.run(memberId, p.name, p.plan, 'Active', joinedDate, expiryDate, p.address, membershipExpiry);
+  insertMember.run(memberId, p.name, p.contact, p.plan, 'Active', joinedDate, expiryDate, p.address, membershipExpiry);
   console.log(`Created: ${p.name} (${memberId}) — ${period} — joined ${joinedDate}`);
 
   // For Daily members: create check-in logs from join date to today (but not beyond expiry)
