@@ -1005,21 +1005,25 @@ app.post('/api/sms/test', authMiddleware, async (req, res) => {
     if (addrs.length === 0) return res.status(400).json({ error: 'Cannot detect carrier for this number.' });
 
     const results = [];
+    let anySent = false;
+    const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
+
     for (const addr of addrs) {
       const domain = addr.split('@')[1];
       try {
         await sendSmsViaEmail(settings, addr, message);
         results.push({ domain, status: 'sent' });
-        const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
-        logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'sent');
-        return res.json({ message: `✅ Sent via ${domain}`, results });
+        anySent = true;
       } catch (e) {
         results.push({ domain, status: 'failed', error: e.message });
       }
     }
-    const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
-    logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'failed');
-    res.json({ message: '❌ All gateways failed', results });
+
+    logStmt.run('MANUAL', 'Manual Test', to, message, 'test', anySent ? 'sent' : 'failed');
+    res.json({
+      message: anySent ? `✅ Sent to ${results.filter(r => r.status === 'sent').map(r => r.domain).join(', ')} — check your phone for which arrived` : '❌ All gateways failed',
+      results
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
