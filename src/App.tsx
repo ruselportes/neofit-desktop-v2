@@ -8,6 +8,7 @@ import AttendanceView from './views/AttendanceView.tsx';
 
 import RatesView from './views/RatesView.tsx';
 import RevenueView from './views/RevenueView.tsx';
+import SettingsView from './views/SettingsView.tsx';
 import LoginView from './views/LoginView.tsx';
 import AccountModal from './views/AccountModal.tsx';
 import * as api from './api';
@@ -140,6 +141,7 @@ function App() {
       case 'attendance': return <AttendanceView showNotification={showNotification} />;
       case 'rates': return <RatesView />;
       case 'revenue': return <RevenueView />;
+      case 'settings': return <SettingsView showNotification={showNotification} />;
       default: return <DashboardView onNavigate={setActiveTab} role={role} />;
     }
   };
@@ -201,9 +203,9 @@ function App() {
           </button>
         </div>
         <ul className="nav-links">
-          {['dashboard', 'members', 'attendance', 'rates', 'revenue']
+          {['dashboard', 'members', 'attendance', 'rates', 'revenue', 'settings']
             .map(tab => {
-              const icons: Record<string, string> = { dashboard: '📊', members: '👥', attendance: '📋', rates: '💰', revenue: '💵' };
+              const icons: Record<string, string> = { dashboard: '📊', members: '👥', attendance: '📋', rates: '💰', revenue: '💵', settings: '⚙️' };
               return (
                 <li 
                   key={tab} 
