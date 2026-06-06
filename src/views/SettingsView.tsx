@@ -68,6 +68,7 @@ export default function SettingsView({ showNotification }: { showNotification: (
         <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <label>Enabled</label>
           <input type="checkbox" checked={form.smtpEnabled} onChange={e => setForm({...form, smtpEnabled: e.target.checked})} />
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>— When checked, the system automatically sends expiry SMS at 7d, 3d, and 1d before each member's expiry. Uncheck to disable all SMS.</span>
         </div>
         <button className="btn-primary" style={{ marginTop: 8 }} onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</button>
       </div>
