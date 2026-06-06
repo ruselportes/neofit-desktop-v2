@@ -9,7 +9,6 @@ import {
   Platform,
   PermissionsAndroid,
   StyleSheet,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { NativeModules } from 'react-native';
@@ -24,6 +23,15 @@ interface LogEntry {
   success: boolean;
   timestamp: string;
   error: string;
+}
+
+interface SimCard {
+  subId: number;
+  carrierName: string;
+  displayName: string;
+  slotIndex: number;
+  isActive: boolean;
+  isDefaultSms: boolean;
 }
 
 export default function App() {
@@ -43,16 +51,21 @@ export default function App() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [autoSending, setAutoSending] = useState(false);
 
+  const [simCards, setSimCards] = useState<SimCard[]>([]);
+  const [simPermission, setSimPermission] = useState(false);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     requestSmsPermission();
+    requestSimPermission();
     SmsGatewayModule.isRunning().then((isRunning: boolean) => {
       if (isRunning) {
         setRunning(true);
         SmsGatewayModule.getServerUrl().then((url: string) => {
           setServerUrl(url);
           setStatus(`Running at ${url}`);
+          fetchSimCards();
         });
       } else {
         setStatus('Idle — tap Start to begin');
@@ -102,6 +115,46 @@ export default function App() {
     }
   };
 
+  const requestSimPermission = async () => {
+    if (Platform.OS === 'android' && Platform.Version >= 30) {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
+          {
+            title: 'Phone State Permission',
+            message: 'Needed to detect your SIM cards for SMS sending.',
+            buttonPositive: 'Grant',
+          },
+        );
+        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+          setSimPermission(true);
+          fetchSimCards();
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    } else {
+      setSimPermission(true);
+      fetchSimCards();
+    }
+  };
+
+  const fetchSimCards = async () => {
+    try {
+      const cards: SimCard[] = await SmsGatewayModule.getSimCards();
+      setSimCards(cards);
+    } catch (e) {
+    }
+  };
+
+  const handleSelectSim = async (subId: number) => {
+    try {
+      await SmsGatewayModule.setActiveSim(subId);
+      setSimCards(prev => prev.map(s => ({ ...s, isActive: s.subId === subId })));
+    } catch (e) {
+    }
+  };
+
   const autoDiscover = async () => {
     setDiscovering(true);
     try {
@@ -136,6 +189,7 @@ export default function App() {
       setServerUrl(url);
       setRunning(true);
       setStatus(`Running at ${url}`);
+      fetchSimCards();
     } catch (e: any) {
       setStatus(`Error: ${e.message}`);
     }
@@ -229,6 +283,11 @@ export default function App() {
   const truncate = (s: string, len: number) =>
     s.length > len ? s.substring(0, len) + '...' : s;
 
+  const activeSubId = simCards.find(s => s.isActive)?.subId ?? -1;
+  const activeSimName = simCards.find(s => s.isActive)?.carrierName
+    || (simCards.find(s => s.isDefaultSms)?.carrierName)
+    || 'System default';
+
   const renderTabBar = () => (
     <View style={styles.tabBar}>
       {[
@@ -280,6 +339,44 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
+      {simCards.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.label}>SIM Card Selection</Text>
+          <Text style={styles.hint}>Choose which SIM to use for sending SMS.</Text>
+          {simCards.map(sim => (
+            <TouchableOpacity
+              key={sim.subId}
+              style={[styles.simItem, sim.isActive && styles.simItemActive]}
+              onPress={() => handleSelectSim(sim.subId)}>
+              <View style={styles.simRadio}>
+                {sim.isActive && <View style={styles.simRadioDot} />}
+              </View>
+              <View style={styles.simInfo}>
+                <Text style={styles.simName}>{sim.carrierName}</Text>
+                <Text style={styles.simDetail}>
+                  SIM {sim.slotIndex + 1}
+                  {sim.isDefaultSms ? ' (default SMS)' : ''}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity
+            style={[styles.simItem, activeSubId < 0 && styles.simItemActive]}
+            onPress={() => handleSelectSim(-1)}>
+            <View style={styles.simRadio}>
+              {activeSubId < 0 && <View style={styles.simRadioDot} />}
+            </View>
+            <View style={styles.simInfo}>
+              <Text style={styles.simName}>System default</Text>
+              <Text style={styles.simDetail}>Let Android choose</Text>
+            </View>
+          </TouchableOpacity>
+          <Text style={[styles.hint, { marginTop: 8 }]}>
+            Active SIM: {activeSimName}
+          </Text>
+        </View>
+      )}
+
       <View style={styles.card}>
         <Text style={styles.label}>Desktop Connection</Text>
         <Text style={styles.hint}>
@@ -320,6 +417,12 @@ export default function App() {
       <View style={styles.card}>
         <Text style={styles.label}>Manual SMS</Text>
         <Text style={styles.hint}>Send an SMS directly through the phone's SIM card.</Text>
+
+        {simCards.length > 0 && (
+          <Text style={[styles.hint, { marginBottom: 12 }]}>
+            Sending via: {activeSimName}
+          </Text>
+        )}
 
         {!running && (
           <Text style={[styles.textMuted, { marginBottom: 12 }]}>
@@ -639,5 +742,47 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#556',
     marginLeft: 8,
+  },
+  simItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0d1b2a',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#1a2a44',
+  },
+  simItemActive: {
+    borderColor: '#52b788',
+  },
+  simRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#52b788',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  simRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#52b788',
+  },
+  simInfo: {
+    flex: 1,
+  },
+  simName: {
+    fontSize: 14,
+    color: '#eee',
+    fontWeight: 'bold',
+  },
+  simDetail: {
+    fontSize: 11,
+    color: '#667788',
+    marginTop: 2,
   },
 });

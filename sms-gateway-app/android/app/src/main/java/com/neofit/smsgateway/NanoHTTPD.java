@@ -2,6 +2,8 @@ package com.neofit.smsgateway;
 
 import android.content.Context;
 import android.telephony.SmsManager;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionManager;
 import android.util.Log;
 
 import java.io.BufferedReader;
@@ -30,17 +32,19 @@ public class NanoHTTPD {
     private static final String TAG = "NanoHTTPD";
     private static final int PORT = 8080;
     private static final String LOG_FILE = "sms_logs.json";
+    private static final String PREFS_NAME = "neofit_sms_prefs";
+    private static final String KEY_ACTIVE_SUB_ID = "active_sub_id";
 
     private ServerSocket serverSocket;
     private boolean running = false;
     private String ipAddress;
-    private final SmsManager smsManager = SmsManager.getDefault();
     private Context context;
 
     private static final List<SmsLogEntry> smsLog = new ArrayList<>();
     private static long logIdCounter = 0;
     private static final Object logLock = new Object();
     private static Context staticContext;
+    private static int activeSubId = -1;
 
     public static class SmsLogEntry {
         public final long id;
@@ -74,6 +78,7 @@ public class NanoHTTPD {
         this.context = context;
         staticContext = context;
         this.ipAddress = getLocalIpAddress();
+        loadSubId();
         loadLogsFromFile();
     }
 
@@ -118,6 +123,67 @@ public class NanoHTTPD {
         } catch (IOException ignored) {}
         callback.onServerStop();
     }
+
+    // ── SIM selection ──────────────────────────────────────
+
+    public static void setActiveSubId(int subId) {
+        activeSubId = subId;
+        if (staticContext != null) {
+            staticContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putInt(KEY_ACTIVE_SUB_ID, subId).apply();
+        }
+    }
+
+    public static int getActiveSubId() {
+        return activeSubId;
+    }
+
+    private static void loadSubId() {
+        if (staticContext != null) {
+            activeSubId = staticContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_ACTIVE_SUB_ID, -1);
+        }
+    }
+
+    public static String getSimCardsAsJson() {
+        JSONArray arr = new JSONArray();
+        if (staticContext == null) return arr.toString();
+        try {
+            SubscriptionManager subManager = (SubscriptionManager)
+                staticContext.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+            if (subManager == null) return arr.toString();
+            List<SubscriptionInfo> subs = subManager.getActiveSubscriptionInfoList();
+            if (subs == null) return arr.toString();
+            for (SubscriptionInfo info : subs) {
+                JSONObject obj = new JSONObject();
+                obj.put("subId", info.getSubscriptionId());
+                CharSequence carrier = info.getCarrierName();
+                obj.put("carrierName", carrier != null ? carrier.toString() : "SIM " + info.getSimSlotIndex());
+                obj.put("displayName", info.getDisplayName() != null ? info.getDisplayName().toString() : "");
+                obj.put("slotIndex", info.getSimSlotIndex());
+                obj.put("isActive", info.getSubscriptionId() == activeSubId);
+                obj.put("isDefaultSms", info.getSubscriptionId() == SubscriptionManager.getDefaultSmsSubscriptionId());
+                arr.put(obj);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to get SIMs: " + e.getMessage());
+        }
+        return arr.toString();
+    }
+
+    // ── SMS sending (respects active SIM) ─────────────────
+
+    private void sendSmsInternal(String to, String message) throws Exception {
+        if (activeSubId >= 0) {
+            SmsManager sms = SmsManager.getSmsManagerForSubscriptionId(activeSubId);
+            sms.sendTextMessage(to, null, message, null, null);
+        } else {
+            SmsManager sms = SmsManager.getDefault();
+            sms.sendTextMessage(to, null, message, null, null);
+        }
+    }
+
+    // ── Logs ───────────────────────────────────────────────
 
     public static void addLogEntry(String to, String message, boolean success, String error) {
         synchronized (logLock) {
@@ -213,6 +279,8 @@ public class NanoHTTPD {
         }
     }
 
+    // ── HTTP handlers ──────────────────────────────────────
+
     private void handleClient(Socket client) {
         try {
             BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
@@ -256,6 +324,8 @@ public class NanoHTTPD {
             } else if (method.equals("POST") && path.equals("/clear-logs")) {
                 clearLogs();
                 sendJson(out, 200, "{\"success\":true}");
+            } else if (method.equals("GET") && path.equals("/sims")) {
+                sendJson(out, 200, getSimCardsAsJson());
             } else {
                 sendJson(out, 404, "{\"error\":\"Not found\"}");
             }
@@ -278,8 +348,8 @@ public class NanoHTTPD {
                 return;
             }
 
-            smsManager.sendTextMessage(to, null, message, null, null);
-            Log.i(TAG, "SMS sent to " + to);
+            sendSmsInternal(to, message);
+            Log.i(TAG, "SMS sent to " + to + " (subId=" + activeSubId + ")");
             addLogEntry(to, message, true, null);
             callback.onSmsSent(to, true);
             sendJson(out, 200, "{\"success\":true}");
