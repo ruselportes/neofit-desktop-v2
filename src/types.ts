@@ -9,6 +9,7 @@ export interface Member {
   expiry_date?: string;
   address?: string;
   membership_expiry?: string;
+  last_sms_sent?: string;
 }
 
 export interface CheckIn {
@@ -44,4 +45,8 @@ export interface GymSettings {
   contact: string;
   address: string;
   announcement: string;
+  phoneAppIp: string;
+  phoneAppPort: number;
+  phoneAppEnabled: boolean;
+  notifyDaysBefore: number;
 }

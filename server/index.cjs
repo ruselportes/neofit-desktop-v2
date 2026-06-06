@@ -4,6 +4,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const http = require('http');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'neofit-desktop-secret-key-2026';
 
@@ -74,6 +75,7 @@ db.exec(`
     expiry_date DATE,
     address TEXT DEFAULT '',
     membership_expiry DATE,
+    last_sms_sent DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -92,7 +94,12 @@ db.exec(`
     gym_name TEXT NOT NULL DEFAULT 'NeoFit Fitness Gym',
     contact TEXT NOT NULL DEFAULT '',
     address TEXT NOT NULL DEFAULT '',
-    announcement TEXT NOT NULL DEFAULT ''
+    announcement TEXT NOT NULL DEFAULT '',
+    phone_app_ip TEXT NOT NULL DEFAULT '',
+    phone_app_port INTEGER NOT NULL DEFAULT 3002,
+    phone_app_enabled INTEGER NOT NULL DEFAULT 0,
+    notify_days_before INTEGER NOT NULL DEFAULT 3,
+    last_notification_run TEXT
   );
 `);
 
@@ -111,6 +118,14 @@ try {
 } catch (err) {
   console.error('Migration notice (can be ignored if fresh database):', err.message);
 }
+
+// Migrate existing DBs: add columns that may not exist yet
+try { db.exec('ALTER TABLE members ADD COLUMN last_sms_sent DATE'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN phone_app_ip TEXT NOT NULL DEFAULT ""'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN phone_app_port INTEGER NOT NULL DEFAULT 3002'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN phone_app_enabled INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN notify_days_before INTEGER NOT NULL DEFAULT 3'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN last_notification_run TEXT'); } catch {}
 
 // Seed default admin user if none exists
 const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
@@ -281,6 +296,65 @@ function formatLocalTime(localDtStr) {
   return `${hours}:${minutes}:${seconds} ${ampm}`;
 }
 
+
+// ─── SMS / Phone App Transport ───────────────────────────
+function sendSmsViaPhoneApp(settings, number, message) {
+  return new Promise((resolve, reject) => {
+    if (!settings.phone_app_enabled || !settings.phone_app_ip) {
+      return reject(new Error('Phone app not configured'));
+    }
+    const postData = JSON.stringify({ number, message });
+    const opts = {
+      hostname: settings.phone_app_ip,
+      port: settings.phone_app_port,
+      path: '/send-sms',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
+      timeout: 5000,
+    };
+    const req = http.request(opts, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (res.statusCode === 200) resolve(JSON.parse(data));
+        else reject(new Error(`Phone app returned ${res.statusCode}: ${data}`));
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Phone app timeout')); });
+    req.write(postData);
+    req.end();
+  });
+}
+
+async function sendExpiryNotifications() {
+  const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  if (!settings || !settings.phone_app_enabled) return 0;
+
+  const today = new Date().toLocaleDateString('sv');
+  const days = settings.notify_days_before || 3;
+
+  const members = db.prepare(`
+    SELECT * FROM members
+    WHERE (expiry_date = date('now', '+?' || ' days')
+       OR (membership_expiry IS NOT NULL AND membership_expiry = date('now', '+?' || ' days')))
+      AND (last_sms_sent IS NULL OR last_sms_sent != ?)
+  `).all(days, days, today);
+
+  let sent = 0;
+  for (const m of members) {
+    const msg = `Hi ${m.name}, your ${m.expiry_date ? 'plan' : 'membership'} expires in ${days} day(s). Please renew. - NeoFit Fitness`;
+    try {
+      await sendSmsViaPhoneApp(settings, m.contact, msg);
+      db.prepare('UPDATE members SET last_sms_sent = ? WHERE id = ?').run(today, m.id);
+      sent++;
+    } catch (e) {
+      console.error('SMS send failed for', m.name, e.message);
+    }
+  }
+  db.prepare('UPDATE settings SET last_notification_run = ? WHERE id = 1').run(today);
+  return sent;
+}
 
 
 // ─── Auth Middleware ─────────────────────────────────────────
@@ -831,21 +905,52 @@ app.get('/api/payments', authMiddleware, (req, res) => {
 // ─── Settings ───────────────────────────────────────────────
 app.get('/api/settings', authMiddleware, (_req, res) => {
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '' });
+  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '', phoneAppIp: '', phoneAppPort: 3002, phoneAppEnabled: false, notifyDaysBefore: 3 });
   res.json({
     gymName: settings.gym_name,
     contact: settings.contact,
     address: settings.address,
-    announcement: settings.announcement
+    announcement: settings.announcement,
+    phoneAppIp: settings.phone_app_ip,
+    phoneAppPort: settings.phone_app_port,
+    phoneAppEnabled: !!settings.phone_app_enabled,
+    notifyDaysBefore: settings.notify_days_before,
   });
 });
 
 app.put('/api/settings', authMiddleware, (req, res) => {
-  const { gymName, contact, address, announcement } = req.body;
+  const { gymName, contact, address, announcement, phoneAppIp, phoneAppPort, phoneAppEnabled, notifyDaysBefore } = req.body;
   db.prepare(`
-    UPDATE settings SET gym_name = ?, contact = ?, address = ?, announcement = ? WHERE id = 1
-  `).run(gymName || '', contact || '', address || '', announcement || '');
+    UPDATE settings SET gym_name = ?, contact = ?, address = ?, announcement = ?,
+      phone_app_ip = ?, phone_app_port = ?, phone_app_enabled = ?, notify_days_before = ? WHERE id = 1
+  `).run(
+    gymName || '', contact || '', address || '', announcement || '',
+    phoneAppIp || '', phoneAppPort || 3002, phoneAppEnabled ? 1 : 0, notifyDaysBefore || 3
+  );
   res.json({ message: 'Settings saved.' });
+});
+
+// ─── SMS Notifications ───────────────────────────────────
+app.post('/api/sms/test', authMiddleware, async (req, res) => {
+  try {
+    const { to, message } = req.body;
+    if (!to || !message) return res.status(400).json({ error: 'Recipient number and message are required.' });
+    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    if (!settings || !settings.phone_app_enabled) return res.status(400).json({ error: 'Phone app is not enabled. Save settings first.' });
+    await sendSmsViaPhoneApp(settings, to, message);
+    res.json({ message: 'Test SMS sent successfully.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/notify/run', authMiddleware, async (_req, res) => {
+  try {
+    const count = await sendExpiryNotifications();
+    res.json({ message: `Notification sent to ${count} member(s).` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Revenue ─────────────────────────────────────────────
@@ -1136,11 +1241,32 @@ app.get('/api/revenue/export', authMiddleware, async (req, res) => {
   }
 });
 
+// ─── Daily SMS Scheduler ────────────────────────────────
+function startSmsScheduler() {
+  const checkAndRun = async () => {
+    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    if (!settings || !settings.phone_app_enabled) return;
+    const now = new Date();
+    const today = now.toLocaleDateString('sv');
+    if (now.getHours() === 8 && settings.last_notification_run !== today) {
+      try {
+        const count = await sendExpiryNotifications();
+        if (count > 0) console.log(`SMS scheduler: sent ${count} notification(s)`);
+      } catch (e) {
+        console.error('SMS scheduler error:', e.message);
+      }
+    }
+  };
+  checkAndRun();
+  setInterval(checkAndRun, 60 * 60 * 1000);
+}
+
 // ─── Start Server ───────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`NeoFit API server running on http://localhost:${PORT}`);
   console.log(`Database: ${dbPath}`);
+  startSmsScheduler();
 });
 
 module.exports = app;

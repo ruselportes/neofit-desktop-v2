@@ -1,0 +1,13 @@
+{
+  "name": "neofit-phone-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NeoFit SMS bridge for Termux (Android)",
+  "main": "phone-server.js",
+  "scripts": {
+    "start": "node phone-server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
