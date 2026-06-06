@@ -4,6 +4,8 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const dgram = require('dgram');
+const os = require('os');
 
 
 const JWT_SECRET = process.env.JWT_SECRET || 'neofit-desktop-secret-key-2026';
@@ -990,6 +992,21 @@ app.post('/api/notify/run', authMiddleware, async (_req, res) => {
   }
 });
 
+// ─── Phone-triggered notifications (unprotected, shared secret) ──
+app.post('/api/notify/run-from-phone', async (req, res) => {
+  const secret = req.query.secret || req.body?.secret;
+  const expectedSecret = process.env.PHONE_SECRET || 'neofit-default';
+  if (secret !== expectedSecret) {
+    return res.status(403).json({ error: 'Invalid secret' });
+  }
+  try {
+    const count = await sendExpiryNotifications();
+    res.json({ sent: count });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Announcement ────────────────────────────────────────
 app.post('/api/announcement/send', authMiddleware, async (_req, res) => {
   try {
@@ -1326,12 +1343,44 @@ function startSmsScheduler() {
   setInterval(checkAndRun, 60 * 60 * 1000);
 }
 
+// ─── UDP Discovery Listener ──────────────────────────────
+function startDiscoveryListener() {
+  const server = dgram.createSocket('udp4');
+  server.on('message', (msg, rinfo) => {
+    if (msg.toString().trim() === 'NeoFitDiscover') {
+      const localIp = getLocalIpAddress();
+      const response = `NeoFitResponse:http://${localIp}:${PORT}`;
+      server.send(response, rinfo.port, rinfo.address);
+      console.log(`Discovery: responded to ${rinfo.address}:${rinfo.port}`);
+    }
+  });
+  server.on('error', (err) => {
+    console.error('Discovery server error:', err.message);
+  });
+  server.bind(3002, () => {
+    console.log('Discovery listener on UDP port 3002');
+  });
+}
+
+function getLocalIpAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+}
+
 // ─── Start Server ───────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`NeoFit API server running on http://localhost:${PORT}`);
   console.log(`Database: ${dbPath}`);
   startSmsScheduler();
+  startDiscoveryListener();
 });
 
 module.exports = app;

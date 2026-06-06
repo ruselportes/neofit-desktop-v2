@@ -44,7 +44,7 @@ class SmsGatewayService : Service() {
         }
 
         server?.stop()
-        server = NanoHTTPD(callback)
+        server = NanoHTTPD(callback, applicationContext)
         server?.start()
 
         return START_STICKY
