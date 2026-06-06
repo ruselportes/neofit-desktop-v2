@@ -4,6 +4,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { SerialPort } = require('serialport');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'neofit-desktop-secret-key-2026';
 
@@ -74,6 +75,7 @@ db.exec(`
     expiry_date DATE,
     address TEXT DEFAULT '',
     membership_expiry DATE,
+    last_sms_sent DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -92,7 +94,12 @@ db.exec(`
     gym_name TEXT NOT NULL DEFAULT 'NeoFit Fitness Gym',
     contact TEXT NOT NULL DEFAULT '',
     address TEXT NOT NULL DEFAULT '',
-    announcement TEXT NOT NULL DEFAULT ''
+    announcement TEXT NOT NULL DEFAULT '',
+    modem_port TEXT NOT NULL DEFAULT 'COM3',
+    modem_baud INTEGER NOT NULL DEFAULT 9600,
+    modem_enabled INTEGER NOT NULL DEFAULT 0,
+    notify_days_before INTEGER NOT NULL DEFAULT 3,
+    last_notification_run TEXT
   );
 `);
 
@@ -111,6 +118,14 @@ try {
 } catch (err) {
   console.error('Migration notice (can be ignored if fresh database):', err.message);
 }
+
+// Migrate existing DBs: add columns that may not exist yet
+try { db.exec('ALTER TABLE members ADD COLUMN last_sms_sent DATE'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN modem_port TEXT NOT NULL DEFAULT "COM3"'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN modem_baud INTEGER NOT NULL DEFAULT 9600'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN modem_enabled INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN notify_days_before INTEGER NOT NULL DEFAULT 3'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN last_notification_run TEXT'); } catch {}
 
 // Seed default admin user if none exists
 const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
@@ -281,6 +296,129 @@ function formatLocalTime(localDtStr) {
   return `${hours}:${minutes}:${seconds} ${ampm}`;
 }
 
+
+// ─── GSM Modem ──────────────────────────────────────────
+class GsmModem {
+  constructor(port, baudRate) {
+    this.portPath = port;
+    this.baudRate = baudRate;
+    this.port = null;
+    this.ready = false;
+  }
+
+  async open() {
+    return new Promise((resolve, reject) => {
+      try {
+        this.port = new SerialPort({ path: this.portPath, baudRate: this.baudRate, autoOpen: false });
+        this.port.open((err) => {
+          if (err) { this.ready = false; return reject(err); }
+          this.ready = true;
+          resolve();
+        });
+      } catch (e) { reject(e); }
+    });
+  }
+
+  close() {
+    if (this.port) { try { this.port.close(); } catch {} }
+    this.ready = false;
+  }
+
+  async sendAt(cmd, timeout = 3000) {
+    return new Promise((resolve, reject) => {
+      if (!this.port || !this.ready) return reject(new Error('Modem not connected'));
+      let response = '';
+      const timer = setTimeout(() => { this.port.removeListener('data', handler); reject(new Error('AT timeout')); }, timeout);
+      const handler = (data) => {
+        response += data.toString();
+        if (response.includes('OK') || response.includes('>')) {
+          clearTimeout(timer); this.port.removeListener('data', handler); resolve(response);
+        }
+        if (response.includes('ERROR')) {
+          clearTimeout(timer); this.port.removeListener('data', handler); reject(new Error('AT error: ' + response));
+        }
+      };
+      this.port.on('data', handler);
+      this.port.write(cmd + '\r');
+    });
+  }
+
+  async sendSms(number, message) {
+    await this.sendAt('AT+CMGF=1');
+    await this.sendAt('AT+CSCS="GSM"');
+    const resp = await this.sendAt(`AT+CMGS="${number}"`);
+    if (!resp.includes('>')) throw new Error('Modem not ready for SMS');
+    return new Promise((resolve, reject) => {
+      let response = '';
+      const timer = setTimeout(() => { this.port.removeListener('data', handler); reject(new Error('SMS send timeout')); }, 10000);
+      const handler = (data) => {
+        response += data.toString();
+        if (response.includes('OK') || response.includes('+CMGS')) {
+          clearTimeout(timer); this.port.removeListener('data', handler); resolve(response);
+        }
+        if (response.includes('ERROR')) {
+          clearTimeout(timer); this.port.removeListener('data', handler); reject(new Error('SMS error: ' + response));
+        }
+      };
+      this.port.on('data', handler);
+      this.port.write(Buffer.from(message + '\x1A', 'ascii'));
+    });
+  }
+
+  async testConnection() {
+    try {
+      await this.sendAt('AT', 2000);
+      return true;
+    } catch { return false; }
+  }
+}
+
+let modemInstance = null;
+
+function getModem(settings) {
+  if (!settings || !settings.modem_enabled) return null;
+  if (!modemInstance || modemInstance.portPath !== settings.modem_port || modemInstance.baudRate !== settings.modem_baud) {
+    if (modemInstance) modemInstance.close();
+    modemInstance = new GsmModem(settings.modem_port, settings.modem_baud);
+  }
+  return modemInstance;
+}
+
+async function sendSmsViaModem(settings, number, message) {
+  const modem = getModem(settings);
+  if (!modem) throw new Error('Modem not configured');
+  if (!modem.ready) await modem.open();
+  await modem.sendSms(number, message);
+}
+
+async function sendExpiryNotifications() {
+  const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  if (!settings || !settings.modem_enabled) return 0;
+
+  const today = new Date().toLocaleDateString('sv');
+  const days = settings.notify_days_before || 3;
+
+  const members = db.prepare(`
+    SELECT * FROM members
+    WHERE (expiry_date = date('now', '+?' || ' days')
+       OR (membership_expiry IS NOT NULL AND membership_expiry = date('now', '+?' || ' days')))
+      AND (last_sms_sent IS NULL OR last_sms_sent != ?)
+  `).all(days, days, today);
+
+  let sent = 0;
+  for (const m of members) {
+    const msg = `Hi ${m.name}, your ${m.expiry_date ? 'plan' : 'membership'} expires in ${days} day(s). Please renew. - NeoFit Fitness`;
+    try {
+      await sendSmsViaModem(settings, m.contact, msg);
+      db.prepare('UPDATE members SET last_sms_sent = ? WHERE id = ?').run(today, m.id);
+      sent++;
+    } catch (e) {
+      console.error('SMS send failed for', m.name, e.message);
+    }
+  }
+  db.prepare('UPDATE settings SET last_notification_run = ? WHERE id = 1').run(today);
+  return sent;
+}
 
 
 // ─── Auth Middleware ─────────────────────────────────────────
@@ -831,21 +969,52 @@ app.get('/api/payments', authMiddleware, (req, res) => {
 // ─── Settings ───────────────────────────────────────────────
 app.get('/api/settings', authMiddleware, (_req, res) => {
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '' });
+  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '', modemPort: 'COM3', modemBaud: 9600, modemEnabled: false, notifyDaysBefore: 3 });
   res.json({
     gymName: settings.gym_name,
     contact: settings.contact,
     address: settings.address,
-    announcement: settings.announcement
+    announcement: settings.announcement,
+    modemPort: settings.modem_port,
+    modemBaud: settings.modem_baud,
+    modemEnabled: !!settings.modem_enabled,
+    notifyDaysBefore: settings.notify_days_before,
   });
 });
 
 app.put('/api/settings', authMiddleware, (req, res) => {
-  const { gymName, contact, address, announcement } = req.body;
+  const { gymName, contact, address, announcement, modemPort, modemBaud, modemEnabled, notifyDaysBefore } = req.body;
   db.prepare(`
-    UPDATE settings SET gym_name = ?, contact = ?, address = ?, announcement = ? WHERE id = 1
-  `).run(gymName || '', contact || '', address || '', announcement || '');
+    UPDATE settings SET gym_name = ?, contact = ?, address = ?, announcement = ?,
+      modem_port = ?, modem_baud = ?, modem_enabled = ?, notify_days_before = ? WHERE id = 1
+  `).run(
+    gymName || '', contact || '', address || '', announcement || '',
+    modemPort || 'COM3', modemBaud || 9600, modemEnabled ? 1 : 0, notifyDaysBefore || 3
+  );
   res.json({ message: 'Settings saved.' });
+});
+
+// ─── SMS Notifications ───────────────────────────────────
+app.post('/api/sms/test', authMiddleware, async (req, res) => {
+  try {
+    const { to, message } = req.body;
+    if (!to || !message) return res.status(400).json({ error: 'Recipient number and message are required.' });
+    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    if (!settings || !settings.modem_enabled) return res.status(400).json({ error: 'Modem is not enabled. Save settings first.' });
+    await sendSmsViaModem(settings, to, message);
+    res.json({ message: 'Test SMS sent successfully.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/notify/run', authMiddleware, async (_req, res) => {
+  try {
+    const count = await sendExpiryNotifications();
+    res.json({ message: `Notification sent to ${count} member(s).` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Revenue ─────────────────────────────────────────────
@@ -1136,11 +1305,32 @@ app.get('/api/revenue/export', authMiddleware, async (req, res) => {
   }
 });
 
+// ─── Daily SMS Scheduler ────────────────────────────────
+function startSmsScheduler() {
+  const checkAndRun = async () => {
+    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    if (!settings || !settings.modem_enabled) return;
+    const now = new Date();
+    const today = now.toLocaleDateString('sv');
+    if (now.getHours() === 8 && settings.last_notification_run !== today) {
+      try {
+        const count = await sendExpiryNotifications();
+        if (count > 0) console.log(`SMS scheduler: sent ${count} notification(s)`);
+      } catch (e) {
+        console.error('SMS scheduler error:', e.message);
+      }
+    }
+  };
+  checkAndRun();
+  setInterval(checkAndRun, 60 * 60 * 1000);
+}
+
 // ─── Start Server ───────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`NeoFit API server running on http://localhost:${PORT}`);
   console.log(`Database: ${dbPath}`);
+  startSmsScheduler();
 });
 
 module.exports = app;

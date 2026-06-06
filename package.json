@@ -26,7 +26,8 @@
     "jsonwebtoken": "^9.0.2",
     "react": "^19.2.6",
     "react-chartjs-2": "^5.3.1",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "serialport": "^13.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
