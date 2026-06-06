@@ -4,11 +4,12 @@ import type { GymSettings, SmsLogEntry } from '../types';
 
 export default function SettingsView({ showNotification }: { showNotification: (message: string, type?: 'success' | 'error') => void }) {
   const [form, setForm] = useState<GymSettings>({
-    gymName: '', contact: '', address: '', announcement: '',
+    gymName: '', address: '', announcement: '',
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '',
     smtpEnabled: false,
   });
   const [saving, setSaving] = useState(false);
+  const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
   const [logs, setLogs] = useState<SmsLogEntry[]>([]);
   const [logPage, setLogPage] = useState(1);
   const [logTotal, setLogTotal] = useState(0);
@@ -33,6 +34,19 @@ export default function SettingsView({ showNotification }: { showNotification: (
     setSaving(false);
   };
 
+  const handleSendAnnouncement = async () => {
+    if (!form.announcement.trim()) { showNotification('Write an announcement first.', 'error'); return; }
+    setSendingAnnouncement(true);
+    try {
+      const res = await api.sendAnnouncement();
+      showNotification(res.message || 'Sent.');
+      api.fetchSmsLogs(logPage, logLimit).then(r => { setLogs(r.logs); setLogTotal(r.total); }).catch(() => {});
+    } catch (e) {
+      showNotification(e instanceof Error ? e.message : 'Failed.', 'error');
+    }
+    setSendingAnnouncement(false);
+  };
+
   const totalPages = Math.ceil(logTotal / logLimit);
 
   const formatTime = (t: string) => {
@@ -49,9 +63,15 @@ export default function SettingsView({ showNotification }: { showNotification: (
       <div className="card" style={{ maxWidth: 600, margin: '0 auto' }}>
         <h3 style={{ marginBottom: 16 }}>Gym Information</h3>
         <div className="form-group"><label>Gym Name</label><input className="input-field" value={form.gymName} onChange={e => setForm({...form, gymName: e.target.value})} /></div>
-        <div className="form-group"><label>Contact</label><input className="input-field" value={form.contact} onChange={e => setForm({...form, contact: e.target.value})} /></div>
         <div className="form-group"><label>Address</label><input className="input-field" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
-        <div className="form-group"><label>Announcement</label><textarea className="input-field" value={form.announcement} onChange={e => setForm({...form, announcement: e.target.value})} rows={3} /></div>
+        <div className="form-group"><label>Announcement</label>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <textarea className="input-field" value={form.announcement} onChange={e => setForm({...form, announcement: e.target.value})} rows={3} style={{ flex: 1 }} />
+            <button className="btn-primary" style={{ padding: '6px 14px', fontSize: '0.8rem', whiteSpace: 'nowrap', marginTop: 0 }} onClick={handleSendAnnouncement} disabled={sendingAnnouncement}>
+              {sendingAnnouncement ? 'Sending...' : 'Send to All'}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="card" style={{ maxWidth: 600, margin: '1rem auto' }}>
@@ -86,7 +106,7 @@ export default function SettingsView({ showNotification }: { showNotification: (
                     <th>Member</th>
                     <th>Contact</th>
                     <th>Message</th>
-                    <th>Milestone</th>
+                    <th>Type</th>
                     <th>Status</th>
                     <th>Time</th>
                   </tr>

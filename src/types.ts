@@ -42,7 +42,6 @@ export interface DashboardStats {
 
 export interface GymSettings {
   gymName: string;
-  contact: string;
   address: string;
   announcement: string;
   smtpHost: string;

@@ -101,10 +101,13 @@ export const exportRevenue = async (year: number, month: number) => {
 export const fetchSettings = () => request('/settings');
 
 export const saveSettings = (data: {
-  gymName: string; contact: string; address: string; announcement: string;
+  gymName: string; address: string; announcement: string;
   smtpHost: string; smtpPort: number; smtpUser: string; smtpPass: string;
   smtpFrom: string; smtpEnabled: boolean;
 }) => request('/settings', { method: 'PUT', body: JSON.stringify(data) });
 
 export const fetchSmsLogs = (page = 1, limit = 50) =>
   request(`/sms/logs?page=${page}&limit=${limit}`);
+
+export const sendAnnouncement = () =>
+  request('/announcement/send', { method: 'POST' });

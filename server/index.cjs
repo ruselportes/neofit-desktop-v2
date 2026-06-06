@@ -947,10 +947,9 @@ app.get('/api/payments', authMiddleware, (req, res) => {
 // ─── Settings ───────────────────────────────────────────────
 app.get('/api/settings', authMiddleware, (_req, res) => {
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '', smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '', smtpEnabled: false });
+  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', address: '', announcement: '', smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '', smtpEnabled: false });
   res.json({
     gymName: settings.gym_name,
-    contact: settings.contact,
     address: settings.address,
     announcement: settings.announcement,
     smtpHost: settings.smtp_host,
@@ -963,13 +962,13 @@ app.get('/api/settings', authMiddleware, (_req, res) => {
 });
 
 app.put('/api/settings', authMiddleware, (req, res) => {
-  const { gymName, contact, address, announcement, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpEnabled } = req.body;
+  const { gymName, address, announcement, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpEnabled } = req.body;
   db.prepare(`
-    UPDATE settings SET gym_name = ?, contact = ?, address = ?, announcement = ?,
+    UPDATE settings SET gym_name = ?, address = ?, announcement = ?,
       smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?, smtp_from = ?,
       smtp_enabled = ? WHERE id = 1
   `).run(
-    gymName || '', contact || '', address || '', announcement || '',
+    gymName || '', address || '', announcement || '',
     smtpHost || '', smtpPort || 587, smtpUser || '', smtpPass || '', smtpFrom || '',
     smtpEnabled ? 1 : 0
   );
@@ -986,6 +985,39 @@ app.get('/api/sms/logs', authMiddleware, (req, res) => {
     SELECT * FROM sms_log ORDER BY sent_at DESC LIMIT ? OFFSET ?
   `).all(limit, offset);
   res.json({ logs, total, page, limit });
+});
+
+// ─── Announcement ────────────────────────────────────────
+app.post('/api/announcement/send', authMiddleware, async (_req, res) => {
+  try {
+    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    if (!settings || !settings.smtp_enabled) return res.status(400).json({ error: 'SMTP is not enabled. Configure and enable SMTP first.' });
+    if (!settings.announcement) return res.status(400).json({ error: 'No announcement to send. Write an announcement first.' });
+
+    const members = db.prepare("SELECT * FROM members WHERE contact != '' AND contact IS NOT NULL").all();
+    let sent = 0;
+    const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
+
+    for (const m of members) {
+      const msg = `📢 ${settings.announcement} - NeoFit Fitness`;
+      const smsAddr = buildSmsAddress(m.contact);
+      if (!smsAddr) {
+        logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'failed');
+        continue;
+      }
+      try {
+        await sendSmsViaEmail(settings, smsAddr, msg);
+        logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'sent');
+        sent++;
+      } catch (e) {
+        logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'failed', e.message);
+      }
+    }
+
+    res.json({ message: `Announcement sent to ${sent} of ${members.length} member(s).` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Revenue ─────────────────────────────────────────────
