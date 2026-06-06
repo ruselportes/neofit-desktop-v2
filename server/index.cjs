@@ -1003,15 +1003,23 @@ app.post('/api/sms/test', authMiddleware, async (req, res) => {
     if (!settings || !settings.smtp_enabled) return res.status(400).json({ error: 'SMTP is not enabled.' });
     const addrs = buildSmsAddresses(to);
     if (addrs.length === 0) return res.status(400).json({ error: 'Cannot detect carrier for this number.' });
-    let lastErr = null;
+
+    const results = [];
     for (const addr of addrs) {
-      try { await sendSmsViaEmail(settings, addr, message); lastErr = null; break; }
-      catch (e) { lastErr = e; }
+      const domain = addr.split('@')[1];
+      try {
+        await sendSmsViaEmail(settings, addr, message);
+        results.push({ domain, status: 'sent' });
+        const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
+        logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'sent');
+        return res.json({ message: `✅ Sent via ${domain}`, results });
+      } catch (e) {
+        results.push({ domain, status: 'failed', error: e.message });
+      }
     }
-    if (lastErr) throw lastErr;
     const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
-    logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'sent');
-    res.json({ message: 'Test SMS sent.' });
+    logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'failed');
+    res.json({ message: '❌ All gateways failed', results });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
