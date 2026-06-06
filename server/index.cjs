@@ -316,22 +316,22 @@ function formatLocalTime(localDtStr) {
 
 // ─── SMS / Email-to-SMS ──────────────────────────────────
 const CARRIER_MAP = [
-  { prefixes: ['0905','0906','0915','0916','0917','0926','0927','0935','0936','0937','0945','0955','0965','0966','0967','0975','0977','0978','0979','0995','0996','0997'], domain: 'globe.com.ph' },
-  { prefixes: ['0907','0908','0909','0910','0912','0918','0919','0920','0921','0928','0929','0930','0938','0939','0940','0946','0947','0948','0949','0950','0951','0961','0963','0968','0969','0970','0971','0972','0973','0974','0980','0981','0982','0989','0990','0998','0999'], domain: 'smart.com.ph' },
-  { prefixes: ['0922','0923','0924','0925','0931','0932','0933','0934','0941','0942','0943','0944','0952','0953','0954','0956','0957','0958','0959','0960','0962','0963'], domain: 'sun.com.ph' },
-  { prefixes: ['0895','0896','0897','0898','0991','0992','0993','0994'], domain: 'dito.ph' },
+  { prefixes: ['0905','0906','0915','0916','0917','0926','0927','0935','0936','0937','0945','0955','0965','0966','0967','0975','0977','0978','0979','0995','0996','0997'], domains: ['globe.com.ph'] },
+  { prefixes: ['0907','0908','0909','0910','0912','0918','0919','0920','0921','0928','0929','0930','0938','0939','0940','0946','0947','0948','0949','0950','0951','0961','0963','0968','0969','0970','0971','0972','0973','0974','0980','0981','0982','0989','0990','0998','0999'], domains: ['smart.com.ph', 'tnt.ph', 'mysmart.com.ph'] },
+  { prefixes: ['0922','0923','0924','0925','0931','0932','0933','0934','0941','0942','0943','0944','0952','0953','0954','0956','0957','0958','0959','0960','0962','0963'], domains: ['sun.com.ph'] },
+  { prefixes: ['0895','0896','0897','0898','0991','0992','0993','0994'], domains: ['dito.ph'] },
 ];
 
 function detectCarrier(contact) {
   const prefix = contact.slice(0, 4);
   const entry = CARRIER_MAP.find(c => c.prefixes.includes(prefix));
-  return entry ? entry.domain : null;
+  return entry ? entry.domains : null;
 }
 
-function buildSmsAddress(contact) {
-  const domain = detectCarrier(contact);
-  if (!domain) return null;
-  return `${contact}@${domain}`;
+function buildSmsAddresses(contact) {
+  const domains = detectCarrier(contact);
+  if (!domains) return [];
+  return domains.map(d => `${contact}@${d}`);
 }
 
 async function sendSmsViaEmail(settings, toAddress, message) {
@@ -374,22 +374,29 @@ async function sendExpiryNotifications() {
     const targetStr = targetDate.toISOString().split('T')[0];
 
     for (const m of members) {
-      const smsAddr = buildSmsAddress(m.contact);
+      const addrs = buildSmsAddresses(m.contact);
       const isPlan = m.expiry_date === targetStr;
       const msg = `Hi ${m.name}, your ${isPlan ? 'plan' : 'membership'} expires ${label}. Please renew. - NeoFit Fitness`;
       const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
-      if (!smsAddr) {
+      if (addrs.length === 0) {
         logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'failed');
         continue;
       }
-      try {
-        await sendSmsViaEmail(settings, smsAddr, msg);
+      let lastErr = null;
+      for (const addr of addrs) {
+        try {
+          await sendSmsViaEmail(settings, addr, msg);
+          lastErr = null;
+          break;
+        } catch (e) { lastErr = e; }
+      }
+      if (lastErr) {
+        logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'failed', lastErr.message);
+        console.error('SMS failed for', m.name, lastErr.message);
+      } else {
         db.prepare('UPDATE members SET last_sms_sent = ? WHERE id = ?').run(today, m.id);
         logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'sent');
         sent++;
-      } catch (e) {
-        logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'failed', e.message);
-        console.error('SMS send failed for', m.name, e.message);
       }
     }
   }
@@ -994,9 +1001,14 @@ app.post('/api/sms/test', authMiddleware, async (req, res) => {
     if (!to || !message) return res.status(400).json({ error: 'Recipient number and message are required.' });
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
     if (!settings || !settings.smtp_enabled) return res.status(400).json({ error: 'SMTP is not enabled.' });
-    const smsAddr = buildSmsAddress(to);
-    if (!smsAddr) return res.status(400).json({ error: 'Cannot detect carrier for this number.' });
-    await sendSmsViaEmail(settings, smsAddr, message);
+    const addrs = buildSmsAddresses(to);
+    if (addrs.length === 0) return res.status(400).json({ error: 'Cannot detect carrier for this number.' });
+    let lastErr = null;
+    for (const addr of addrs) {
+      try { await sendSmsViaEmail(settings, addr, message); lastErr = null; break; }
+      catch (e) { lastErr = e; }
+    }
+    if (lastErr) throw lastErr;
     const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
     logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'sent');
     res.json({ message: 'Test SMS sent.' });
@@ -1027,17 +1039,22 @@ app.post('/api/announcement/send', authMiddleware, async (_req, res) => {
 
     for (const m of members) {
       const msg = `📢 ${settings.announcement} - NeoFit Fitness`;
-      const smsAddr = buildSmsAddress(m.contact);
-      if (!smsAddr) {
+      const addrs = buildSmsAddresses(m.contact);
+      const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
+      if (addrs.length === 0) {
         logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'failed');
         continue;
       }
-      try {
-        await sendSmsViaEmail(settings, smsAddr, msg);
+      let lastErr = null;
+      for (const addr of addrs) {
+        try { await sendSmsViaEmail(settings, addr, msg); lastErr = null; break; }
+        catch (e) { lastErr = e; }
+      }
+      if (lastErr) {
+        logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'failed', lastErr.message);
+      } else {
         logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'sent');
         sent++;
-      } catch (e) {
-        logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'failed', e.message);
       }
     }
 
