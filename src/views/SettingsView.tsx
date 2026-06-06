@@ -6,7 +6,7 @@ export default function SettingsView({ showNotification }: { showNotification: (
   const [form, setForm] = useState<GymSettings>({
     gymName: '', contact: '', address: '', announcement: '',
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '',
-    smtpEnabled: false, notifyDaysBefore: 3,
+    smtpEnabled: false,
   });
   const [testNumber, setTestNumber] = useState('');
   const [testMessage, setTestMessage] = useState('');
@@ -62,9 +62,10 @@ export default function SettingsView({ showNotification }: { showNotification: (
 
       <div className="card" style={{ maxWidth: 600, margin: '1rem auto' }}>
         <h3 style={{ marginBottom: 16 }}>SMS Notifications (Email-to-SMS Gateway)</h3>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-          Configure SMTP to send expiry notifications as SMS via carrier email gateways (e.g. 0917xxxxxxx@globe.com.ph).
-        </p>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+            Configure SMTP to send expiry notifications as SMS via carrier email gateways (e.g. 0917xxxxxxx@globe.com.ph).
+            Notifications are sent automatically at <strong>7 days</strong>, <strong>3 days</strong>, and <strong>1 day</strong> before expiry.
+          </p>
         <div className="form-group"><label>SMTP Host</label><input className="input-field" placeholder="smtp.gmail.com" value={form.smtpHost} onChange={e => setForm({...form, smtpHost: e.target.value})} /></div>
         <div className="form-group"><label>SMTP Port</label><input type="number" className="input-field" value={form.smtpPort} onChange={e => setForm({...form, smtpPort: parseInt(e.target.value) || 587})} /></div>
         <div className="form-group"><label>SMTP User</label><input className="input-field" placeholder="your@email.com" value={form.smtpUser} onChange={e => setForm({...form, smtpUser: e.target.value})} /></div>
@@ -73,14 +74,6 @@ export default function SettingsView({ showNotification }: { showNotification: (
         <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <label>Enabled</label>
           <input type="checkbox" checked={form.smtpEnabled} onChange={e => setForm({...form, smtpEnabled: e.target.checked})} />
-        </div>
-        <div className="form-group"><label>Notify Days Before Expiry</label>
-          <select className="input-field" style={{ maxWidth: 120 }} value={form.notifyDaysBefore} onChange={e => setForm({...form, notifyDaysBefore: parseInt(e.target.value)})}>
-            <option value={1}>1 day</option>
-            <option value={3}>3 days</option>
-            <option value={5}>5 days</option>
-            <option value={7}>7 days</option>
-          </select>
         </div>
 
         <button className="btn-primary" style={{ marginTop: 8 }} onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</button>

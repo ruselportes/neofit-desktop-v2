@@ -24,7 +24,7 @@
     "docx": "^9.7.1",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^8.0.10",
     "react": "^19.2.6",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.6"
@@ -37,7 +37,7 @@
     "@types/recharts": "^1.8.29",
     "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.1.2",
-    "electron": "^36.3.1",
+    "electron": "^42.3.3",
     "electron-builder": "^26.0.12",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",

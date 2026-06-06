@@ -101,7 +101,6 @@ db.exec(`
     smtp_pass TEXT NOT NULL DEFAULT '',
     smtp_from TEXT NOT NULL DEFAULT '',
     smtp_enabled INTEGER NOT NULL DEFAULT 0,
-    notify_days_before INTEGER NOT NULL DEFAULT 3,
     last_notification_run TEXT
   );
 `);
@@ -130,7 +129,6 @@ try { db.exec('ALTER TABLE settings ADD COLUMN smtp_user TEXT NOT NULL DEFAULT "
 try { db.exec('ALTER TABLE settings ADD COLUMN smtp_pass TEXT NOT NULL DEFAULT ""'); } catch {}
 try { db.exec('ALTER TABLE settings ADD COLUMN smtp_from TEXT NOT NULL DEFAULT ""'); } catch {}
 try { db.exec('ALTER TABLE settings ADD COLUMN smtp_enabled INTEGER NOT NULL DEFAULT 0'); } catch {}
-try { db.exec('ALTER TABLE settings ADD COLUMN notify_days_before INTEGER NOT NULL DEFAULT 3'); } catch {}
 try { db.exec('ALTER TABLE settings ADD COLUMN last_notification_run TEXT'); } catch {}
 
 // Seed default admin user if none exists
@@ -345,28 +343,32 @@ async function sendExpiryNotifications() {
   if (!settings || !settings.smtp_enabled) return 0;
 
   const today = new Date().toLocaleDateString('sv');
-  const days = settings.notify_days_before || 3;
-
-  const members = db.prepare(`
-    SELECT * FROM members
-    WHERE (expiry_date = date('now', '+?' || ' days')
-       OR (membership_expiry IS NOT NULL AND membership_expiry = date('now', '+?' || ' days')))
-      AND (last_sms_sent IS NULL OR last_sms_sent != ?)
-  `).all(days, days, today);
-
   let sent = 0;
-  for (const m of members) {
-    const smsAddr = buildSmsAddress(m.contact);
-    if (!smsAddr) continue;
-    const msg = `Hi ${m.name}, your ${m.expiry_date === today ? 'plan' : 'membership'} expires in ${days} day(s). Please renew. - NeoFit Fitness`;
-    try {
-      await sendSmsViaEmail(settings, smsAddr, msg);
-      db.prepare('UPDATE members SET last_sms_sent = ? WHERE id = ?').run(today, m.id);
-      sent++;
-    } catch (e) {
-      console.error('SMS send failed for', m.name, e.message);
+  const milestones = [7, 3, 1];
+
+  for (const days of milestones) {
+    const members = db.prepare(`
+      SELECT * FROM members
+      WHERE (expiry_date = date('now', '+?' || ' days')
+         OR (membership_expiry IS NOT NULL AND membership_expiry = date('now', '+?' || ' days')))
+        AND (last_sms_sent IS NULL OR last_sms_sent != ?)
+    `).all(days, days, today);
+
+    for (const m of members) {
+      const smsAddr = buildSmsAddress(m.contact);
+      if (!smsAddr) continue;
+      const label = days === 1 ? 'tomorrow' : `in ${days} days`;
+      const msg = `Hi ${m.name}, your ${m.expiry_date === date('now', '+?' || ' days') ? 'plan' : 'membership'} expires ${label}. Please renew. - NeoFit Fitness`;
+      try {
+        await sendSmsViaEmail(settings, smsAddr, msg);
+        db.prepare('UPDATE members SET last_sms_sent = ? WHERE id = ?').run(today, m.id);
+        sent++;
+      } catch (e) {
+        console.error('SMS send failed for', m.name, e.message);
+      }
     }
   }
+
   db.prepare('UPDATE settings SET last_notification_run = ? WHERE id = 1').run(today);
   return sent;
 }
@@ -920,7 +922,7 @@ app.get('/api/payments', authMiddleware, (req, res) => {
 // ─── Settings ───────────────────────────────────────────────
 app.get('/api/settings', authMiddleware, (_req, res) => {
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '', smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '', smtpEnabled: false, notifyDaysBefore: 3 });
+  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '', smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '', smtpEnabled: false });
   res.json({
     gymName: settings.gym_name,
     contact: settings.contact,
@@ -932,20 +934,19 @@ app.get('/api/settings', authMiddleware, (_req, res) => {
     smtpPass: settings.smtp_pass,
     smtpFrom: settings.smtp_from,
     smtpEnabled: !!settings.smtp_enabled,
-    notifyDaysBefore: settings.notify_days_before,
   });
 });
 
 app.put('/api/settings', authMiddleware, (req, res) => {
-  const { gymName, contact, address, announcement, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpEnabled, notifyDaysBefore } = req.body;
+  const { gymName, contact, address, announcement, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpEnabled } = req.body;
   db.prepare(`
     UPDATE settings SET gym_name = ?, contact = ?, address = ?, announcement = ?,
       smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?, smtp_from = ?,
-      smtp_enabled = ?, notify_days_before = ? WHERE id = 1
+      smtp_enabled = ? WHERE id = 1
   `).run(
     gymName || '', contact || '', address || '', announcement || '',
     smtpHost || '', smtpPort || 587, smtpUser || '', smtpPass || '', smtpFrom || '',
-    smtpEnabled ? 1 : 0, notifyDaysBefore || 3
+    smtpEnabled ? 1 : 0
   );
   res.json({ message: 'Settings saved.' });
 });

@@ -51,5 +51,4 @@ export interface GymSettings {
   smtpPass: string;
   smtpFrom: string;
   smtpEnabled: boolean;
-  notifyDaysBefore: number;
 }

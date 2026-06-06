@@ -103,7 +103,7 @@ export const fetchSettings = () => request('/settings');
 export const saveSettings = (data: {
   gymName: string; contact: string; address: string; announcement: string;
   smtpHost: string; smtpPort: number; smtpUser: string; smtpPass: string;
-  smtpFrom: string; smtpEnabled: boolean; notifyDaysBefore: number;
+  smtpFrom: string; smtpEnabled: boolean;
 }) => request('/settings', { method: 'PUT', body: JSON.stringify(data) });
 
 export const sendTestSms = (to: string, message: string) =>
