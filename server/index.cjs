@@ -103,6 +103,18 @@ db.exec(`
     smtp_enabled INTEGER NOT NULL DEFAULT 0,
     last_notification_run TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS sms_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_id TEXT NOT NULL,
+    member_name TEXT NOT NULL,
+    contact TEXT NOT NULL,
+    message TEXT NOT NULL,
+    milestone TEXT,
+    status TEXT NOT NULL DEFAULT 'sent',
+    error TEXT,
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Migrate old checkins table to check_in_logs if it exists
@@ -130,6 +142,7 @@ try { db.exec('ALTER TABLE settings ADD COLUMN smtp_pass TEXT NOT NULL DEFAULT "
 try { db.exec('ALTER TABLE settings ADD COLUMN smtp_from TEXT NOT NULL DEFAULT ""'); } catch {}
 try { db.exec('ALTER TABLE settings ADD COLUMN smtp_enabled INTEGER NOT NULL DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE settings ADD COLUMN last_notification_run TEXT'); } catch {}
+try { db.exec('CREATE TABLE IF NOT EXISTS sms_log (id INTEGER PRIMARY KEY AUTOINCREMENT, member_id TEXT NOT NULL, member_name TEXT NOT NULL, contact TEXT NOT NULL, message TEXT NOT NULL, milestone TEXT, status TEXT NOT NULL DEFAULT \'sent\', error TEXT, sent_at DATETIME DEFAULT CURRENT_TIMESTAMP)'); } catch {}
 
 // Seed default admin user if none exists
 const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
@@ -354,16 +367,28 @@ async function sendExpiryNotifications() {
         AND (last_sms_sent IS NULL OR last_sms_sent != ?)
     `).all(days, days, today);
 
+    const milestone = days + 'd';
+    const label = days === 1 ? 'tomorrow' : `in ${days} days`;
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + days);
+    const targetStr = targetDate.toISOString().split('T')[0];
+
     for (const m of members) {
       const smsAddr = buildSmsAddress(m.contact);
-      if (!smsAddr) continue;
-      const label = days === 1 ? 'tomorrow' : `in ${days} days`;
-      const msg = `Hi ${m.name}, your ${m.expiry_date === date('now', '+?' || ' days') ? 'plan' : 'membership'} expires ${label}. Please renew. - NeoFit Fitness`;
+      const isPlan = m.expiry_date === targetStr;
+      const msg = `Hi ${m.name}, your ${isPlan ? 'plan' : 'membership'} expires ${label}. Please renew. - NeoFit Fitness`;
+      const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
+      if (!smsAddr) {
+        logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'failed');
+        continue;
+      }
       try {
         await sendSmsViaEmail(settings, smsAddr, msg);
         db.prepare('UPDATE members SET last_sms_sent = ? WHERE id = ?').run(today, m.id);
+        logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'sent');
         sent++;
       } catch (e) {
+        logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'failed', e.message);
         console.error('SMS send failed for', m.name, e.message);
       }
     }
@@ -951,29 +976,16 @@ app.put('/api/settings', authMiddleware, (req, res) => {
   res.json({ message: 'Settings saved.' });
 });
 
-// ─── SMS Notifications ───────────────────────────────────
-app.post('/api/sms/test', authMiddleware, async (req, res) => {
-  try {
-    const { to, message } = req.body;
-    if (!to || !message) return res.status(400).json({ error: 'Recipient number and message are required.' });
-    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-    if (!settings || !settings.smtp_enabled) return res.status(400).json({ error: 'SMTP is not configured. Save SMTP settings first.' });
-    const smsAddr = buildSmsAddress(to);
-    if (!smsAddr) return res.status(400).json({ error: 'Cannot detect carrier for this number.' });
-    await sendSmsViaEmail(settings, smsAddr, message);
-    res.json({ message: 'Test SMS sent successfully.' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/api/notify/run', authMiddleware, async (_req, res) => {
-  try {
-    const count = await sendExpiryNotifications();
-    res.json({ message: `Notification sent to ${count} member(s).` });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+// ─── SMS Logs ────────────────────────────────────────────
+app.get('/api/sms/logs', authMiddleware, (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+  const offset = (page - 1) * limit;
+  const total = db.prepare('SELECT COUNT(*) as count FROM sms_log').get().count;
+  const logs = db.prepare(`
+    SELECT * FROM sms_log ORDER BY sent_at DESC LIMIT ? OFFSET ?
+  `).all(limit, offset);
+  res.json({ logs, total, page, limit });
 });
 
 // ─── Revenue ─────────────────────────────────────────────

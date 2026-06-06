@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as api from '../api';
-import type { GymSettings } from '../types';
+import type { GymSettings, SmsLogEntry } from '../types';
 
 export default function SettingsView({ showNotification }: { showNotification: (message: string, type?: 'success' | 'error') => void }) {
   const [form, setForm] = useState<GymSettings>({
@@ -8,13 +8,19 @@ export default function SettingsView({ showNotification }: { showNotification: (
     smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '',
     smtpEnabled: false,
   });
-  const [testNumber, setTestNumber] = useState('');
-  const [testMessage, setTestMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [logs, setLogs] = useState<SmsLogEntry[]>([]);
+  const [logPage, setLogPage] = useState(1);
+  const [logTotal, setLogTotal] = useState(0);
+  const logLimit = 50;
 
   useEffect(() => {
     api.fetchSettings().then(setForm).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    api.fetchSmsLogs(logPage, logLimit).then(r => { setLogs(r.logs); setLogTotal(r.total); }).catch(() => {});
+  }, [logPage]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -27,23 +33,11 @@ export default function SettingsView({ showNotification }: { showNotification: (
     setSaving(false);
   };
 
-  const handleTestSms = async () => {
-    if (!testNumber || !testMessage) { showNotification('Enter number and message.', 'error'); return; }
-    try {
-      await api.sendTestSms(testNumber, testMessage);
-      showNotification('Test SMS sent.');
-    } catch (e) {
-      showNotification(e instanceof Error ? e.message : 'Failed.', 'error');
-    }
-  };
+  const totalPages = Math.ceil(logTotal / logLimit);
 
-  const handleRunNow = async () => {
-    try {
-      const res = await api.triggerNotifications();
-      showNotification(res.message || 'Done.');
-    } catch (e) {
-      showNotification(e instanceof Error ? e.message : 'Failed.', 'error');
-    }
+  const formatTime = (t: string) => {
+    const d = new Date(t.replace(' ', 'T') + 'Z');
+    return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -62,10 +56,10 @@ export default function SettingsView({ showNotification }: { showNotification: (
 
       <div className="card" style={{ maxWidth: 600, margin: '1rem auto' }}>
         <h3 style={{ marginBottom: 16 }}>SMS Notifications (Email-to-SMS Gateway)</h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-            Configure SMTP to send expiry notifications as SMS via carrier email gateways (e.g. 0917xxxxxxx@globe.com.ph).
-            Notifications are sent automatically at <strong>7 days</strong>, <strong>3 days</strong>, and <strong>1 day</strong> before expiry.
-          </p>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+          Configure SMTP to send expiry notifications as SMS via carrier email gateways (e.g. 0917xxxxxxx@globe.com.ph).
+          Notifications are sent automatically at <strong>7 days</strong>, <strong>3 days</strong>, and <strong>1 day</strong> before expiry.
+        </p>
         <div className="form-group"><label>SMTP Host</label><input className="input-field" placeholder="smtp.gmail.com" value={form.smtpHost} onChange={e => setForm({...form, smtpHost: e.target.value})} /></div>
         <div className="form-group"><label>SMTP Port</label><input type="number" className="input-field" value={form.smtpPort} onChange={e => setForm({...form, smtpPort: parseInt(e.target.value) || 587})} /></div>
         <div className="form-group"><label>SMTP User</label><input className="input-field" placeholder="your@email.com" value={form.smtpUser} onChange={e => setForm({...form, smtpUser: e.target.value})} /></div>
@@ -75,18 +69,54 @@ export default function SettingsView({ showNotification }: { showNotification: (
           <label>Enabled</label>
           <input type="checkbox" checked={form.smtpEnabled} onChange={e => setForm({...form, smtpEnabled: e.target.checked})} />
         </div>
-
         <button className="btn-primary" style={{ marginTop: 8 }} onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</button>
       </div>
 
-      <div className="card" style={{ maxWidth: 600, margin: '1rem auto' }}>
-        <h3 style={{ marginBottom: 16 }}>Test SMS &amp; Manual Run</h3>
-        <div className="form-group"><label>Recipient Number</label><input className="input-field" placeholder="09171234501" value={testNumber} onChange={e => setTestNumber(e.target.value)} maxLength={11} /></div>
-        <div className="form-group"><label>Test Message</label><textarea className="input-field" placeholder="Your message here..." value={testMessage} onChange={e => setTestMessage(e.target.value)} rows={2} /></div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button className="btn-primary" onClick={handleTestSms}>Send Test SMS</button>
-          <button className="btn-primary" style={{ background: 'var(--accent-color)', borderColor: 'var(--accent-color)' }} onClick={handleRunNow}>Run Notifications Now</button>
-        </div>
+      <div className="card" style={{ maxWidth: 800, margin: '1rem auto' }}>
+        <h3 style={{ marginBottom: 16 }}>SMS Logs</h3>
+        {logs.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No SMS have been sent yet. The system will automatically send notifications at 8 AM daily.</p>
+        ) : (
+          <>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th>Contact</th>
+                    <th>Message</th>
+                    <th>Milestone</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map(log => (
+                    <tr key={log.id}>
+                      <td>{log.member_name}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{log.contact}</td>
+                      <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={log.message}>{log.message}</td>
+                      <td>{log.milestone}</td>
+                      <td>
+                        {log.status === 'sent'
+                          ? <span style={{ color: '#4caf50' }}>✅ Sent</span>
+                          : <span style={{ color: '#f44336' }} title={log.error || ''}>❌ Failed</span>}
+                      </td>
+                      <td>{formatTime(log.sent_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                <button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.8rem' }} disabled={logPage <= 1} onClick={() => setLogPage(logPage - 1)}>Prev</button>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{logPage} / {totalPages}</span>
+                <button className="btn-primary" style={{ padding: '4px 12px', fontSize: '0.8rem' }} disabled={logPage >= totalPages} onClick={() => setLogPage(logPage + 1)}>Next</button>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

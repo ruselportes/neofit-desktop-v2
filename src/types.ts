@@ -52,3 +52,15 @@ export interface GymSettings {
   smtpFrom: string;
   smtpEnabled: boolean;
 }
+
+export interface SmsLogEntry {
+  id: number;
+  member_id: string;
+  member_name: string;
+  contact: string;
+  message: string;
+  milestone: string;
+  status: 'sent' | 'failed';
+  error: string | null;
+  sent_at: string;
+}

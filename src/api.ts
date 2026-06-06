@@ -106,8 +106,5 @@ export const saveSettings = (data: {
   smtpFrom: string; smtpEnabled: boolean;
 }) => request('/settings', { method: 'PUT', body: JSON.stringify(data) });
 
-export const sendTestSms = (to: string, message: string) =>
-  request('/sms/test', { method: 'POST', body: JSON.stringify({ to, message }) });
-
-export const triggerNotifications = () =>
-  request('/notify/run', { method: 'POST' });
+export const fetchSmsLogs = (page = 1, limit = 50) =>
+  request(`/sms/logs?page=${page}&limit=${limit}`);
