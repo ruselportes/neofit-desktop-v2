@@ -10,6 +10,10 @@ export default function SettingsView({ showNotification }: { showNotification: (
   });
   const [saving, setSaving] = useState(false);
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
+  const [testNumber, setTestNumber] = useState('');
+  const [testMessage, setTestMessage] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
+  const [runningNotify, setRunningNotify] = useState(false);
   const [logs, setLogs] = useState<SmsLogEntry[]>([]);
   const [logPage, setLogPage] = useState(1);
   const [logTotal, setLogTotal] = useState(0);
@@ -45,6 +49,31 @@ export default function SettingsView({ showNotification }: { showNotification: (
       showNotification(e instanceof Error ? e.message : 'Failed.', 'error');
     }
     setSendingAnnouncement(false);
+  };
+
+  const handleTestSms = async () => {
+    if (!testNumber || !testMessage) { showNotification('Enter number and message.', 'error'); return; }
+    setSendingTest(true);
+    try {
+      await api.sendTestSms(testNumber, testMessage);
+      showNotification('Test SMS sent.');
+      api.fetchSmsLogs(logPage, logLimit).then(r => { setLogs(r.logs); setLogTotal(r.total); }).catch(() => {});
+    } catch (e) {
+      showNotification(e instanceof Error ? e.message : 'Failed.', 'error');
+    }
+    setSendingTest(false);
+  };
+
+  const handleRunNow = async () => {
+    setRunningNotify(true);
+    try {
+      const res = await api.triggerNotifications();
+      showNotification(res.message || 'Done.');
+      api.fetchSmsLogs(logPage, logLimit).then(r => { setLogs(r.logs); setLogTotal(r.total); }).catch(() => {});
+    } catch (e) {
+      showNotification(e instanceof Error ? e.message : 'Failed.', 'error');
+    }
+    setRunningNotify(false);
   };
 
   const totalPages = Math.ceil(logTotal / logLimit);
@@ -91,6 +120,16 @@ export default function SettingsView({ showNotification }: { showNotification: (
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>— When checked, the system automatically sends expiry SMS at 7d, 3d, and 1d before each member's expiry. Uncheck to disable all SMS.</span>
         </div>
         <button className="btn-primary" style={{ marginTop: 8 }} onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</button>
+      </div>
+
+      <div className="card" style={{ maxWidth: 600, margin: '1rem auto', border: '1px dashed var(--text-muted)' }}>
+        <h3 style={{ marginBottom: 16 }}>Testing (Temporary)</h3>
+        <div className="form-group"><label>Recipient</label><input className="input-field" placeholder="09171234501" value={testNumber} onChange={e => setTestNumber(e.target.value)} maxLength={11} /></div>
+        <div className="form-group"><label>Message</label><textarea className="input-field" placeholder="Test message..." value={testMessage} onChange={e => setTestMessage(e.target.value)} rows={2} /></div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button className="btn-primary" onClick={handleTestSms} disabled={sendingTest}>{sendingTest ? 'Sending...' : 'Send Test SMS'}</button>
+          <button className="btn-primary" style={{ background: 'var(--accent-color)', borderColor: 'var(--accent-color)' }} onClick={handleRunNow} disabled={runningNotify}>{runningNotify ? 'Running...' : 'Run Notifications Now'}</button>
+        </div>
       </div>
 
       <div className="card" style={{ maxWidth: 800, margin: '1rem auto' }}>

@@ -987,6 +987,33 @@ app.get('/api/sms/logs', authMiddleware, (req, res) => {
   res.json({ logs, total, page, limit });
 });
 
+// ─── Temporary Testing Routes ────────────────────────────
+app.post('/api/sms/test', authMiddleware, async (req, res) => {
+  try {
+    const { to, message } = req.body;
+    if (!to || !message) return res.status(400).json({ error: 'Recipient number and message are required.' });
+    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    if (!settings || !settings.smtp_enabled) return res.status(400).json({ error: 'SMTP is not enabled.' });
+    const smsAddr = buildSmsAddress(to);
+    if (!smsAddr) return res.status(400).json({ error: 'Cannot detect carrier for this number.' });
+    await sendSmsViaEmail(settings, smsAddr, message);
+    const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
+    logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'sent');
+    res.json({ message: 'Test SMS sent.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/notify/run', authMiddleware, async (_req, res) => {
+  try {
+    const count = await sendExpiryNotifications();
+    res.json({ message: `Notifications sent to ${count} member(s).` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Announcement ────────────────────────────────────────
 app.post('/api/announcement/send', authMiddleware, async (_req, res) => {
   try {

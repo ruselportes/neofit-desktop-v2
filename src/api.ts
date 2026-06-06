@@ -111,3 +111,9 @@ export const fetchSmsLogs = (page = 1, limit = 50) =>
 
 export const sendAnnouncement = () =>
   request('/announcement/send', { method: 'POST' });
+
+export const sendTestSms = (to: string, message: string) =>
+  request('/sms/test', { method: 'POST', body: JSON.stringify({ to, message }) });
+
+export const triggerNotifications = () =>
+  request('/notify/run', { method: 'POST' });
