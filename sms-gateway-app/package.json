@@ -1,0 +1,17 @@
+{
+  "name": "NeofitSmsGateway",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "android": "react-native run-android",
+    "start": "react-native start"
+  },
+  "dependencies": {
+    "react": "19.0.0",
+    "react-native": "0.79.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "~5.7.0"
+  }
+}

@@ -44,12 +44,7 @@ export interface GymSettings {
   gymName: string;
   address: string;
   announcement: string;
-  smtpHost: string;
-  smtpPort: number;
-  smtpUser: string;
-  smtpPass: string;
-  smtpFrom: string;
-  smtpEnabled: boolean;
+  smsGatewayUrl: string;
 }
 
 export interface SmsLogEntry {

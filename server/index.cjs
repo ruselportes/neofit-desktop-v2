@@ -4,7 +4,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+
 
 const JWT_SECRET = process.env.JWT_SECRET || 'neofit-desktop-secret-key-2026';
 
@@ -95,12 +95,7 @@ db.exec(`
     contact TEXT NOT NULL DEFAULT '',
     address TEXT NOT NULL DEFAULT '',
     announcement TEXT NOT NULL DEFAULT '',
-    smtp_host TEXT NOT NULL DEFAULT '',
-    smtp_port INTEGER NOT NULL DEFAULT 587,
-    smtp_user TEXT NOT NULL DEFAULT '',
-    smtp_pass TEXT NOT NULL DEFAULT '',
-    smtp_from TEXT NOT NULL DEFAULT '',
-    smtp_enabled INTEGER NOT NULL DEFAULT 0,
+    sms_gateway_url TEXT NOT NULL DEFAULT '',
     last_notification_run TEXT
   );
 
@@ -135,12 +130,7 @@ try {
 
 // Migrate existing DBs: add columns that may not exist yet
 try { db.exec('ALTER TABLE members ADD COLUMN last_sms_sent DATE'); } catch {}
-try { db.exec('ALTER TABLE settings ADD COLUMN smtp_host TEXT NOT NULL DEFAULT ""'); } catch {}
-try { db.exec('ALTER TABLE settings ADD COLUMN smtp_port INTEGER NOT NULL DEFAULT 587'); } catch {}
-try { db.exec('ALTER TABLE settings ADD COLUMN smtp_user TEXT NOT NULL DEFAULT ""'); } catch {}
-try { db.exec('ALTER TABLE settings ADD COLUMN smtp_pass TEXT NOT NULL DEFAULT ""'); } catch {}
-try { db.exec('ALTER TABLE settings ADD COLUMN smtp_from TEXT NOT NULL DEFAULT ""'); } catch {}
-try { db.exec('ALTER TABLE settings ADD COLUMN smtp_enabled INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE settings ADD COLUMN sms_gateway_url TEXT NOT NULL DEFAULT ""'); } catch {}
 try { db.exec('ALTER TABLE settings ADD COLUMN last_notification_run TEXT'); } catch {}
 try { db.exec('CREATE TABLE IF NOT EXISTS sms_log (id INTEGER PRIMARY KEY AUTOINCREMENT, member_id TEXT NOT NULL, member_name TEXT NOT NULL, contact TEXT NOT NULL, message TEXT NOT NULL, milestone TEXT, status TEXT NOT NULL DEFAULT \'sent\', error TEXT, sent_at DATETIME DEFAULT CURRENT_TIMESTAMP)'); } catch {}
 
@@ -334,26 +324,21 @@ function buildSmsAddresses(contact) {
   return domains.map(d => `${contact}@${d}`);
 }
 
-async function sendSmsViaEmail(settings, toAddress, message) {
-  if (!settings.smtp_enabled) return false;
-  const transporter = nodemailer.createTransport({
-    host: settings.smtp_host,
-    port: settings.smtp_port,
-    secure: settings.smtp_port === 465,
-    auth: { user: settings.smtp_user, pass: settings.smtp_pass },
+async function sendSmsViaGateway(settings, to, message) {
+  if (!settings.sms_gateway_url) return false;
+  const url = settings.sms_gateway_url.replace(/\/$/, '') + '/send-sms';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, message }),
   });
-  await transporter.sendMail({
-    from: settings.smtp_from,
-    to: toAddress,
-    subject: 'NeoFit Notification',
-    text: message,
-  });
+  if (!res.ok) throw new Error(`Gateway returned HTTP ${res.status}`);
   return true;
 }
 
 async function sendExpiryNotifications() {
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (!settings || !settings.smtp_enabled) return 0;
+  if (!settings || !settings.sms_gateway_url) return 0;
 
   const today = new Date().toLocaleDateString('sv');
   let sent = 0;
@@ -374,29 +359,17 @@ async function sendExpiryNotifications() {
     const targetStr = targetDate.toISOString().split('T')[0];
 
     for (const m of members) {
-      const addrs = buildSmsAddresses(m.contact);
       const isPlan = m.expiry_date === targetStr;
       const msg = `Hi ${m.name}, your ${isPlan ? 'plan' : 'membership'} expires ${label}. Please renew. - NeoFit Fitness`;
       const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
-      if (addrs.length === 0) {
-        logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'failed');
-        continue;
-      }
-      let lastErr = null;
-      for (const addr of addrs) {
-        try {
-          await sendSmsViaEmail(settings, addr, msg);
-          lastErr = null;
-          break;
-        } catch (e) { lastErr = e; }
-      }
-      if (lastErr) {
-        logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'failed', lastErr.message);
-        console.error('SMS failed for', m.name, lastErr.message);
-      } else {
+      try {
+        await sendSmsViaGateway(settings, m.contact, msg);
         db.prepare('UPDATE members SET last_sms_sent = ? WHERE id = ?').run(today, m.id);
         logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'sent');
         sent++;
+      } catch (e) {
+        logStmt.run(m.member_id, m.name, m.contact, msg, milestone, 'failed', e.message);
+        console.error('SMS failed for', m.name, e.message);
       }
     }
   }
@@ -954,30 +927,23 @@ app.get('/api/payments', authMiddleware, (req, res) => {
 // ─── Settings ───────────────────────────────────────────────
 app.get('/api/settings', authMiddleware, (_req, res) => {
   const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', address: '', announcement: '', smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '', smtpEnabled: false });
+  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', address: '', announcement: '', smsGatewayUrl: '' });
   res.json({
     gymName: settings.gym_name,
     address: settings.address,
     announcement: settings.announcement,
-    smtpHost: settings.smtp_host,
-    smtpPort: settings.smtp_port,
-    smtpUser: settings.smtp_user,
-    smtpPass: settings.smtp_pass,
-    smtpFrom: settings.smtp_from,
-    smtpEnabled: !!settings.smtp_enabled,
+    smsGatewayUrl: settings.sms_gateway_url,
   });
 });
 
 app.put('/api/settings', authMiddleware, (req, res) => {
-  const { gymName, address, announcement, smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpEnabled } = req.body;
+  const { gymName, address, announcement, smsGatewayUrl } = req.body;
   db.prepare(`
     UPDATE settings SET gym_name = ?, address = ?, announcement = ?,
-      smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?, smtp_from = ?,
-      smtp_enabled = ? WHERE id = 1
+      sms_gateway_url = ? WHERE id = 1
   `).run(
     gymName || '', address || '', announcement || '',
-    smtpHost || '', smtpPort || 587, smtpUser || '', smtpPass || '', smtpFrom || '',
-    smtpEnabled ? 1 : 0
+    smsGatewayUrl || '',
   );
   res.json({ message: 'Settings saved.' });
 });
@@ -1000,30 +966,16 @@ app.post('/api/sms/test', authMiddleware, async (req, res) => {
     const { to, message } = req.body;
     if (!to || !message) return res.status(400).json({ error: 'Recipient number and message are required.' });
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-    if (!settings || !settings.smtp_enabled) return res.status(400).json({ error: 'SMTP is not enabled.' });
-    const addrs = buildSmsAddresses(to);
-    if (addrs.length === 0) return res.status(400).json({ error: 'Cannot detect carrier for this number.' });
-
-    const results = [];
-    let anySent = false;
+    if (!settings || !settings.sms_gateway_url) return res.status(400).json({ error: 'SMS Gateway URL is not configured.' });
     const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
-
-    for (const addr of addrs) {
-      const domain = addr.split('@')[1];
-      try {
-        await sendSmsViaEmail(settings, addr, message);
-        results.push({ domain, status: 'sent' });
-        anySent = true;
-      } catch (e) {
-        results.push({ domain, status: 'failed', error: e.message });
-      }
+    try {
+      await sendSmsViaGateway(settings, to, message);
+      logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'sent');
+      res.json({ message: '✅ SMS sent via phone gateway — check your phone.' });
+    } catch (e) {
+      logStmt.run('MANUAL', 'Manual Test', to, message, 'test', 'failed', e.message);
+      res.status(500).json({ error: '❌ Gateway failed: ' + e.message });
     }
-
-    logStmt.run('MANUAL', 'Manual Test', to, message, 'test', anySent ? 'sent' : 'failed');
-    res.json({
-      message: anySent ? `✅ Sent to ${results.filter(r => r.status === 'sent').map(r => r.domain).join(', ')} — check your phone for which arrived` : '❌ All gateways failed',
-      results
-    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1042,7 +994,7 @@ app.post('/api/notify/run', authMiddleware, async (_req, res) => {
 app.post('/api/announcement/send', authMiddleware, async (_req, res) => {
   try {
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-    if (!settings || !settings.smtp_enabled) return res.status(400).json({ error: 'SMTP is not enabled. Configure and enable SMTP first.' });
+    if (!settings || !settings.sms_gateway_url) return res.status(400).json({ error: 'SMS Gateway URL is not configured. Set it in Settings first.' });
     if (!settings.announcement) return res.status(400).json({ error: 'No announcement to send. Write an announcement first.' });
 
     const members = db.prepare("SELECT * FROM members WHERE contact != '' AND contact IS NOT NULL").all();
@@ -1051,22 +1003,12 @@ app.post('/api/announcement/send', authMiddleware, async (_req, res) => {
 
     for (const m of members) {
       const msg = `📢 ${settings.announcement} - NeoFit Fitness`;
-      const addrs = buildSmsAddresses(m.contact);
-      const logStmt = db.prepare('INSERT INTO sms_log (member_id, member_name, contact, message, milestone, status) VALUES (?, ?, ?, ?, ?, ?)');
-      if (addrs.length === 0) {
-        logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'failed');
-        continue;
-      }
-      let lastErr = null;
-      for (const addr of addrs) {
-        try { await sendSmsViaEmail(settings, addr, msg); lastErr = null; break; }
-        catch (e) { lastErr = e; }
-      }
-      if (lastErr) {
-        logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'failed', lastErr.message);
-      } else {
+      try {
+        await sendSmsViaGateway(settings, m.contact, msg);
         logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'sent');
         sent++;
+      } catch (e) {
+        logStmt.run(m.member_id, m.name, m.contact, msg, 'announcement', 'failed', e.message);
       }
     }
 
@@ -1368,7 +1310,7 @@ app.get('/api/revenue/export', authMiddleware, async (req, res) => {
 function startSmsScheduler() {
   const checkAndRun = async () => {
     const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-    if (!settings || !settings.smtp_enabled) return;
+    if (!settings || !settings.sms_gateway_url) return;
     const now = new Date();
     const today = now.toLocaleDateString('sv');
     if (now.getHours() === 8 && settings.last_notification_run !== today) {

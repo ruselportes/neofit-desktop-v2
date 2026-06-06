@@ -102,8 +102,7 @@ export const fetchSettings = () => request('/settings');
 
 export const saveSettings = (data: {
   gymName: string; address: string; announcement: string;
-  smtpHost: string; smtpPort: number; smtpUser: string; smtpPass: string;
-  smtpFrom: string; smtpEnabled: boolean;
+  smsGatewayUrl: string;
 }) => request('/settings', { method: 'PUT', body: JSON.stringify(data) });
 
 export const fetchSmsLogs = (page = 1, limit = 50) =>

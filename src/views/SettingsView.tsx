@@ -5,8 +5,7 @@ import type { GymSettings, SmsLogEntry } from '../types';
 export default function SettingsView({ showNotification }: { showNotification: (message: string, type?: 'success' | 'error') => void }) {
   const [form, setForm] = useState<GymSettings>({
     gymName: '', address: '', announcement: '',
-    smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '', smtpFrom: '',
-    smtpEnabled: false,
+    smsGatewayUrl: '',
   });
   const [saving, setSaving] = useState(false);
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
@@ -104,20 +103,20 @@ export default function SettingsView({ showNotification }: { showNotification: (
       </div>
 
       <div className="card" style={{ maxWidth: 600, margin: '1rem auto' }}>
-        <h3 style={{ marginBottom: 16 }}>SMS Notifications (Email-to-SMS Gateway)</h3>
+        <h3 style={{ marginBottom: 16 }}>SMS Gateway (Phone App)</h3>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-          Configure SMTP to send expiry notifications as SMS via carrier email gateways (e.g. 0917xxxxxxx@globe.com.ph).
+          Install the <strong>NeoFit SMS Gateway</strong> app on an Android phone, tap <strong>Start Server</strong>,
+          then enter the URL shown on the phone below. The server sends SMS notifications through the phone's SIM card.
           Notifications are sent automatically at <strong>7 days</strong>, <strong>3 days</strong>, and <strong>1 day</strong> before expiry.
         </p>
-        <div className="form-group"><label>SMTP Host</label><input className="input-field" placeholder="smtp.gmail.com" value={form.smtpHost} onChange={e => setForm({...form, smtpHost: e.target.value})} /></div>
-        <div className="form-group"><label>SMTP Port</label><input type="number" className="input-field" value={form.smtpPort} onChange={e => setForm({...form, smtpPort: parseInt(e.target.value) || 587})} /></div>
-        <div className="form-group"><label>SMTP User</label><input className="input-field" placeholder="your@email.com" value={form.smtpUser} onChange={e => setForm({...form, smtpUser: e.target.value})} /></div>
-        <div className="form-group"><label>SMTP Password</label><input type="password" className="input-field" value={form.smtpPass} onChange={e => setForm({...form, smtpPass: e.target.value})} /></div>
-        <div className="form-group"><label>From Email</label><input className="input-field" placeholder="gym@neofit.com" value={form.smtpFrom} onChange={e => setForm({...form, smtpFrom: e.target.value})} /></div>
-        <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <label>Enabled</label>
-          <input type="checkbox" checked={form.smtpEnabled} onChange={e => setForm({...form, smtpEnabled: e.target.checked})} />
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>— When checked, the system automatically sends expiry SMS at 7d, 3d, and 1d before each member's expiry. Uncheck to disable all SMS.</span>
+        <div className="form-group"><label>Phone Gateway URL</label>
+          <input className="input-field" placeholder="http://192.168.1.100:8080" value={form.smsGatewayUrl}
+            onChange={e => setForm({...form, smsGatewayUrl: e.target.value})} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            {form.smsGatewayUrl ? '🟢 Phone gateway configured' : '🔴 No phone gateway configured — SMS will not be sent'}
+          </span>
         </div>
         <button className="btn-primary" style={{ marginTop: 8 }} onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save Settings'}</button>
       </div>
