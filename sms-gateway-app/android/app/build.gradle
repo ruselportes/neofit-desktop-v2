@@ -2,10 +2,6 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
-react {
-    // Needed for the new architecture
-}
-
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -24,10 +20,10 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            ndk { debugSymbolLevel = 'none' }
         }
         release {
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            minifyEnabled false
             signingConfig signingConfigs.debug
         }
     }
