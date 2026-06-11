@@ -1,866 +1,54 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
-const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const supabase = require('./supabase.cjs');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'neofit-desktop-secret-key-2026';
 
-// Determine database path: in production (packaged), store in user data dir
-// In development, store in the project root
-let dbPath;
-try {
-  const { app } = require('electron');
-  if (app && app.isPackaged) {
-    dbPath = path.join(app.getPath('userData'), 'neofit.db');
-  } else {
-    dbPath = path.join(__dirname, '..', 'neofit.db');
-  }
-} catch {
-  // Not running inside Electron (dev mode or separate server run) - use project root
-  dbPath = path.join(__dirname, '..', 'neofit.db');
-}
-
-const db = new Database(dbPath);
-
-// Enable WAL mode for better performance
-db.pragma('journal_mode = WAL');
-
-// ─── Helper: Calculate member status ────────────────────────
 function calculateStatus(member) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   const joinedDate = member.joined_date ? new Date(member.joined_date) : null;
   const expiryDate = member.expiry_date ? new Date(member.expiry_date) : null;
-  
+
   if (joinedDate) joinedDate.setHours(0, 0, 0, 0);
   if (expiryDate) expiryDate.setHours(0, 0, 0, 0);
-  
-  // If joined date is in the future
+
   if (joinedDate && joinedDate > today) return 'Pending';
-  
-  // If expired
   if (expiryDate && expiryDate < today) return 'Expired';
-  
-  // If expiring within 7 days
   if (expiryDate) {
     const daysLeft = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (daysLeft <= 7 && daysLeft >= 0) return 'Expiring Soon';
   }
-  
   return 'Active';
 }
 
-// ─── Database Setup ─────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'staff',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS members (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    member_id TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    contact TEXT NOT NULL,
-    plan TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Active',
-    joined_date DATE,
-    expiry_date DATE,
-    address TEXT DEFAULT '',
-    membership_expiry DATE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS check_in_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    member_id TEXT NOT NULL,
-    member_name TEXT NOT NULL,
-    plan TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'Active',
-    checked_in_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    gym_name TEXT NOT NULL DEFAULT 'NeoFit Fitness Gym',
-    contact TEXT NOT NULL DEFAULT '',
-    address TEXT NOT NULL DEFAULT '',
-    announcement TEXT NOT NULL DEFAULT ''
-  );
-`);
-
-// Migrate old checkins table to check_in_logs if it exists
-try {
-  const oldTableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='checkins'").get();
-  if (oldTableCheck) {
-    console.log('Migrating old checkins table to check_in_logs...');
-    db.exec(`
-      INSERT INTO check_in_logs (id, member_id, member_name, plan, status, checked_in_at)
-      SELECT id, member_id, member_name, plan, status, checked_in_at FROM checkins;
-      DROP TABLE checkins;
-    `);
-    console.log('Migration completed successfully.');
+function getLocalDateRange(dateStr) {
+  if (!dateStr) {
+    const now = new Date();
+    dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
-} catch (err) {
-  console.error('Migration notice (can be ignored if fresh database):', err.message);
+  const start = new Date(`${dateStr}T00:00:00`);
+  const end = new Date(`${dateStr}T23:59:59.999`);
+  return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
-// Seed default admin user if none exists
-const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
-if (userCount.count === 0) {
-  const hashedPassword = bcrypt.hashSync('admin123', 10);
-  db.prepare('INSERT INTO users (email, password, role) VALUES (?, ?, ?)').run('admin@neofit.com', hashedPassword, 'admin');
-  console.log('Default admin created: admin@neofit.com / admin123');
-}
-
-// Seed default settings if none exist
-const settingsCount = db.prepare('SELECT COUNT(*) as count FROM settings').get();
-if (settingsCount.count === 0) {
-  db.prepare('INSERT INTO settings (id, gym_name, contact, address, announcement) VALUES (1, ?, ?, ?, ?)').run('NeoFit Fitness Gym', '', '', '');
-}
-
-// Seed demo members (one for each of the 24 plans) if SEED_DEMO env var is true
-if (process.env.SEED_DEMO === 'true') {
-  console.log('Seeding 24 demo members and historical check-in logs...');
-  
-  // Clear tables to start fresh and avoid unique constraint conflicts
-  db.exec('DELETE FROM check_in_logs');
-  db.exec('DELETE FROM members');
-  
-  const demoPlans = [
-    { name: 'John Doe', plan: 'Regular Member - Monthly (No Treadmill)', contact: '09171234501', address: '123 Main St, Quezon City' },
-    { name: 'Jane Smith', plan: 'Regular Member - Monthly (With Treadmill)', contact: '09171234502', address: '456 Oak Rd, Makati City' },
-    { name: 'Michael Johnson', plan: 'Regular Member - Semi-Monthly (No Treadmill)', contact: '09171234503', address: '789 Pine Ave, Pasig City' },
-    { name: 'Emily Davis', plan: 'Regular Member - Semi-Monthly (With Treadmill)', contact: '09171234504', address: '101 Maple Blvd, Mandaluyong City' },
-    { name: 'David Brown', plan: 'Regular Member - Daily (No Treadmill)', contact: '09171234505', address: '202 Birch Ct, Taguig City' },
-    { name: 'Sarah Miller', plan: 'Regular Member - Daily (With Treadmill)', contact: '09171234506', address: '303 Cedar Dr, Parañaque City' },
-    { name: 'James Wilson', plan: 'Student/Senior Member - Monthly (No Treadmill)', contact: '09171234507', address: '404 Redwood Ln, Las Piñas City' },
-    { name: 'Patricia Moore', plan: 'Student/Senior Member - Monthly (With Treadmill)', contact: '09171234508', address: '505 Willow Way, Muntinlupa City' },
-    { name: 'Robert Taylor', plan: 'Student/Senior Member - Semi-Monthly (No Treadmill)', contact: '09171234509', address: '606 Cypress St, Valenzuela City' },
-    { name: 'Linda Anderson', plan: 'Student/Senior Member - Semi-Monthly (With Treadmill)', contact: '09171234510', address: '707 Alder Ave, Caloocan City' },
-    { name: 'William Thomas', plan: 'Student/Senior Member - Daily (No Treadmill)', contact: '09171234511', address: '808 Spruce St, Malabon City' },
-    { name: 'Elizabeth Jackson', plan: 'Student/Senior Member - Daily (With Treadmill)', contact: '09171234512', address: '909 Fir Rd, Navotas City' },
-    { name: 'Richard White', plan: 'Regular Non-Member - Monthly (No Treadmill)', contact: '09171234513', address: '111 Ash St, Marikina City' },
-    { name: 'Barbara Harris', plan: 'Regular Non-Member - Monthly (With Treadmill)', contact: '09171234514', address: '222 Beech Blvd, San Juan City' },
-    { name: 'Joseph Martin', plan: 'Regular Non-Member - Semi-Monthly (No Treadmill)', contact: '09171234515', address: '333 Elm Rd, Pasay City' },
-    { name: 'Susan Thompson', plan: 'Regular Non-Member - Semi-Monthly (With Treadmill)', contact: '09171234516', address: '444 Larch Ct, Manila' },
-    { name: 'Thomas Garcia', plan: 'Regular Non-Member - Daily (No Treadmill)', contact: '09171234517', address: '555 Linden Dr, Quezon City' },
-    { name: 'Jessica Martinez', plan: 'Regular Non-Member - Daily (With Treadmill)', contact: '09171234518', address: '666 Poplar St, Makati City' },
-    { name: 'Charles Robinson', plan: 'Student/Senior Non-Member - Monthly (No Treadmill)', contact: '09171234519', address: '777 Sycamore Ave, Pasig City' },
-    { name: 'Karen Clark', plan: 'Student/Senior Non-Member - Monthly (With Treadmill)', contact: '09171234520', address: '888 Walnut St, Mandaluyong City' },
-    { name: 'Christopher Rodriguez', plan: 'Student/Senior Non-Member - Semi-Monthly (No Treadmill)', contact: '09171234521', address: '999 Chestnut Dr, Taguig City' },
-    { name: 'Nancy Lewis', plan: 'Student/Senior Non-Member - Semi-Monthly (With Treadmill)', contact: '09171234522', address: '124 Magnolia St, Parañaque City' },
-    { name: 'Daniel Lee', plan: 'Student/Senior Non-Member - Daily (No Treadmill)', contact: '09171234523', address: '135 Palm Rd, Las Piñas City' },
-    { name: 'Lisa Walker', plan: 'Student/Senior Non-Member - Daily (With Treadmill)', contact: '09171234524', address: '146 Olive Ct, Muntinlupa City' }
-  ];
-
-  const insertStmt = db.prepare(`
-    INSERT INTO members (member_id, name, contact, plan, status, joined_date, expiry_date, address, membership_expiry)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const checkInStmt = db.prepare(`
-    INSERT INTO check_in_logs (member_id, member_name, plan, status, checked_in_at)
-    VALUES (?, ?, ?, ?, ?)
-  `);
-
-  demoPlans.forEach((m, index) => {
-    const member_id = `M-${String(index + 1).padStart(3, '0')}`;
-    
-    // Stagger join dates to generate interesting histories
-    let joinedDaysAgo = 0;
-    if (m.plan.includes('Daily')) {
-      joinedDaysAgo = index % 3; // Daily members joined 0 to 2 days ago
-    } else if (m.plan.includes('Semi-Monthly')) {
-      joinedDaysAgo = (index % 13) + 2; // Semi-monthly members joined 2 to 14 days ago
-    } else {
-      joinedDaysAgo = (index % 24) + 5; // Monthly members joined 5 to 28 days ago
-    }
-
-    const joinedDate = new Date();
-    joinedDate.setDate(joinedDate.getDate() - joinedDaysAgo);
-    const joined_date_str = joinedDate.toISOString().split('T')[0];
-
-    // Calculate expiry dates
-    const expDate = new Date(joinedDate);
-    if (m.plan.includes('Daily')) {
-      expDate.setDate(expDate.getDate() + 1);
-    } else if (m.plan.includes('Semi-Monthly')) {
-      expDate.setDate(expDate.getDate() + 15);
-    } else if (m.plan.includes('Monthly')) {
-      expDate.setMonth(expDate.getMonth() + 1);
-    }
-    const expiry_date = expDate.toISOString().split('T')[0];
-
-    let membership_expiry = null;
-    if (!m.plan.includes('Non-Member')) {
-      const md = new Date(joinedDate);
-      md.setFullYear(md.getFullYear() + 1);
-      membership_expiry = md.toISOString().split('T')[0];
-    }
-
-    const status = calculateStatus({ joined_date: joined_date_str, expiry_date });
-
-    insertStmt.run(member_id, m.name, m.contact, m.plan, status, joined_date_str, expiry_date, m.address, membership_expiry);
-
-    // Generate historical check-ins from joinedDate up to the minimum of (today, expiryDate)
-    const startDate = new Date(joinedDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const endDate = new Date(expDate);
-    if (endDate > today) {
-      endDate.setTime(today.getTime());
-    }
-
-    const currentLoopDate = new Date(startDate);
-    while (currentLoopDate <= endDate) {
-      // 70% probability of checking in on any given day
-      if (Math.random() < 0.7) {
-        // Pick a random workout window: morning (7-10) or evening (16-19)
-        const isMorning = Math.random() < 0.5;
-        const hour = isMorning 
-          ? Math.floor(Math.random() * 4) + 7   // 7, 8, 9, 10
-          : Math.floor(Math.random() * 4) + 16; // 16, 17, 18, 19
-        const minute = Math.floor(Math.random() * 60);
-        const second = Math.floor(Math.random() * 60);
-
-        const checkInLocal = new Date(currentLoopDate);
-        checkInLocal.setHours(hour, minute, second, 0);
-
-        // Convert to UTC string for SQLite
-        const checked_in_at_utc = checkInLocal.toISOString().replace('T', ' ').substring(0, 19);
-
-        // Calculate member status on the check-in day
-        let logStatus = 'Active';
-        const daysLeftOnCheckinDay = Math.ceil((expDate.getTime() - checkInLocal.getTime()) / (1000 * 60 * 60 * 24));
-        if (daysLeftOnCheckinDay <= 7 && daysLeftOnCheckinDay >= 0) {
-          logStatus = 'Expiring Soon';
-        } else if (daysLeftOnCheckinDay < 0) {
-          logStatus = 'Expired';
-        }
-
-        checkInStmt.run(member_id, m.name, m.plan, logStatus, checked_in_at_utc);
-      }
-      
-      // Move to the next day
-      currentLoopDate.setDate(currentLoopDate.getDate() + 1);
-    }
-  });
-  console.log('Seeded 24 demo members and historical check-in logs successfully.');
-}
-
-// ─── Helper: Generate Member ID ─────────────────────────────
-function generateMemberId() {
-  const last = db.prepare('SELECT member_id FROM members ORDER BY id DESC LIMIT 1').get();
-  if (!last) return 'M-001';
-  const num = parseInt(last.member_id.replace('M-', ''), 10) + 1;
-  return `M-${String(num).padStart(3, '0')}`;
-}
-
-// ─── Helper: Format Local Datetime to 12h AM/PM ───────────────
-function formatLocalTime(localDtStr) {
-  if (!localDtStr) return '';
-  const d = new Date(localDtStr.replace(' ', 'T'));
+function formatLocalTime(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
   if (isNaN(d.getTime())) return '';
-  
+
   let hours = d.getHours();
   const minutes = String(d.getMinutes()).padStart(2, '0');
   const seconds = String(d.getSeconds()).padStart(2, '0');
   const ampm = hours >= 12 ? 'PM' : 'AM';
-  
   hours = hours % 12;
-  hours = hours ? hours : 12; // the hour '0' should be '12'
-  
+  hours = hours ? hours : 12;
   return `${hours}:${minutes}:${seconds} ${ampm}`;
 }
-
-
-
-// ─── Auth Middleware ─────────────────────────────────────────
-function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  try {
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-}
-
-// ─── Express App ────────────────────────────────────────────
-const app = express();
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || origin.startsWith('http://localhost') || origin === 'file://' || origin.startsWith('app://')) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  }
-}));
-app.use(express.json());
-
-// ─── Auth Routes ────────────────────────────────────────────
-app.post('/api/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-  
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user || !bcrypt.compareSync(password, user.password)) {
-    return res.status(401).json({ error: 'Invalid credentials.' });
-  }
-  
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-  res.json({ access_token: token, role: user.role });
-});
-
-app.post('/api/logout', authMiddleware, (_req, res) => {
-  res.json({ message: 'Logged out successfully.' });
-});
-
-// ─── User Profile Routes ────────────────────────────────────
-app.get('/api/users/me', authMiddleware, (req, res) => {
-  try {
-    const user = db.prepare('SELECT id, email, role, created_at FROM users WHERE id = ?').get(req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found.' });
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch user profile.' });
-  }
-});
-
-app.put('/api/users/me/password', authMiddleware, (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Current password and new password are required.' });
-    }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
-    }
-
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-    if (!user || !bcrypt.compareSync(currentPassword, user.password)) {
-      return res.status(401).json({ error: 'Current password is incorrect.' });
-    }
-
-    const hashed = bcrypt.hashSync(newPassword, 10);
-    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashed, req.user.id);
-    res.json({ message: 'Password updated successfully.' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update password.' });
-  }
-});
-
-app.put('/api/users/me/email', authMiddleware, (req, res) => {
-  try {
-    const { newEmail, password } = req.body;
-    if (!newEmail || !password) {
-      return res.status(400).json({ error: 'New email and password are required.' });
-    }
-
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-    if (!user || !bcrypt.compareSync(password, user.password)) {
-      return res.status(401).json({ error: 'Password is incorrect.' });
-    }
-
-    const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(newEmail, req.user.id);
-    if (existing) {
-      return res.status(409).json({ error: 'Email is already in use.' });
-    }
-
-    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(newEmail, req.user.id);
-
-    // Issue new token with updated email so user stays logged in
-    const token = jwt.sign({ id: user.id, email: newEmail, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ access_token: token, email: newEmail });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update email.' });
-  }
-});
-
-// ─── Dashboard ──────────────────────────────────────────────
-app.get('/api/dashboard', authMiddleware, (_req, res) => {
-  try {
-    const allMembers = db.prepare('SELECT * FROM members').all();
-    for (const m of allMembers) {
-      const newStatus = calculateStatus(m);
-      if (newStatus !== m.status) {
-        db.prepare('UPDATE members SET status = ? WHERE id = ?').run(newStatus, m.id);
-      }
-    }
-    
-    const totalMembers = db.prepare('SELECT COUNT(*) as count FROM members').get().count;
-    const activeMembers = db.prepare("SELECT COUNT(*) as count FROM members WHERE status = 'Active'").get().count;
-    
-    const today = new Date().toLocaleDateString('sv');
-    const todayCheckIns = db.prepare("SELECT COUNT(*) as count FROM check_in_logs WHERE DATE(checked_in_at, 'localtime') = ?").get(today).count;
-    
-    const recentCheckInsRaw = db.prepare(`
-      SELECT c.id, c.member_name as memberName, 
-             DATETIME(c.checked_in_at, 'localtime') as local_dt, c.plan, c.status
-      FROM check_in_logs c
-      WHERE DATE(c.checked_in_at, 'localtime') = ?
-      ORDER BY c.checked_in_at DESC
-      LIMIT 10
-    `).all(today);
-    
-    const recentCheckIns = recentCheckInsRaw.map(c => ({
-      id: c.id,
-      memberName: c.memberName,
-      time: formatLocalTime(c.local_dt),
-      plan: c.plan,
-      status: c.status
-    }));
-
-    const expiringMembers = db.prepare(`
-    SELECT id, member_id, name, contact, plan, status, expiry_date, membership_expiry 
-    FROM members
-    WHERE status = 'Expiring Soon'
-       OR (membership_expiry IS NOT NULL AND membership_expiry BETWEEN date('now', 'localtime') AND date('now', 'localtime', '+7 days'))
-    ORDER BY CASE WHEN status = 'Expiring Soon' THEN expiry_date ELSE membership_expiry END ASC
-    `).all();
-
-    const expiredMembers = db.prepare(`
-    SELECT id, member_id, name, contact, plan, status, expiry_date, membership_expiry 
-    FROM members
-    WHERE status = 'Expired'
-       OR (membership_expiry IS NOT NULL AND membership_expiry < date('now', 'localtime'))
-    ORDER BY CASE WHEN status = 'Expired' THEN expiry_date ELSE membership_expiry END DESC
-    LIMIT 50
-    `).all();
-
-    const now = new Date();
-    const revYear = now.getFullYear();
-    const revMonth = now.getMonth() + 1;
-    const revData = computeRevenueForDateRange(db, revYear, revMonth);
-    let revYearTotal = revData.thisMonthRevenue;
-    for (let m = 1; m <= 12; m++) {
-      if (m !== revMonth) {
-        const md = computeRevenueForDateRange(db, revYear, m);
-        revYearTotal += md.thisMonthRevenue;
-      }
-    }
-
-    res.json({ 
-      activeMembers, 
-      totalMembers, 
-      todayCheckIns, 
-      recentCheckIns,
-      expiringMembers,
-      expiredMembers,
-      todayRevenue: revData.todayRevenue,
-      thisMonthRevenue: revData.thisMonthRevenue,
-      thisYearRevenue: revYearTotal
-    });
-  } catch (e) {
-    console.error('Dashboard error:', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ─── Members ────────────────────────────────────────────────
-app.get('/api/members', authMiddleware, (req, res) => {
-  const { search, status } = req.query;
-  
-  // Update all statuses first
-  const allMembers = db.prepare('SELECT * FROM members').all();
-  for (const m of allMembers) {
-    const newStatus = calculateStatus(m);
-    if (newStatus !== m.status) {
-      db.prepare('UPDATE members SET status = ? WHERE id = ?').run(newStatus, m.id);
-    }
-  }
-  
-  let query = 'SELECT * FROM members WHERE 1=1';
-  const params = [];
-  
-  if (search) {
-    query += ' AND (name LIKE ? OR member_id LIKE ? OR contact LIKE ?';
-    const s = `%${search}%`;
-    params.push(s, s, s);
-    
-    // Smart ID matching:
-    // If search is just a number (e.g., "12" or "3"), pad it to match "M-012" or "M-003"
-    const digitMatch = search.trim().match(/^(\d+)$/);
-    if (digitMatch) {
-      const paddedId = `M-${digitMatch[1].padStart(3, '0')}`;
-      query += ' OR member_id = ?';
-      params.push(paddedId);
-    }
-    
-    // If search is "M12" or "m12" (no hyphen), convert to "M-012"
-    const mMatch = search.trim().match(/^[Mm](\d+)$/);
-    if (mMatch) {
-      const paddedId = `M-${mMatch[1].padStart(3, '0')}`;
-      query += ' OR member_id = ?';
-      params.push(paddedId);
-    }
-
-    // If search is "M-12" or "m-12" (with hyphen but unpadded), convert to "M-012"
-    const hyphenMatch = search.trim().match(/^[Mm]-(\d+)$/);
-    if (hyphenMatch) {
-      const paddedId = `M-${hyphenMatch[1].padStart(3, '0')}`;
-      query += ' OR member_id = ?';
-      params.push(paddedId);
-    }
-    
-    query += ')';
-  }
-  
-  if (status && status !== 'All Status') {
-    if (status === 'Annual Membership') {
-      query += " AND plan NOT LIKE '%Non-Member%'";
-    } else {
-      query += ' AND status = ?';
-      params.push(status);
-    }
-  }
-
-  if (req.query.plan) {
-    const planFilter = req.query.plan;
-    if (planFilter.includes('Non-Members')) {
-      query += ' AND plan LIKE ?';
-      params.push(`%${planFilter.replace(' Non-Members', '')}%`);
-      query += ' AND plan LIKE ?';
-      params.push('%Non-Member%');
-    } else if (planFilter.includes('Members')) {
-      query += ' AND plan LIKE ?';
-      params.push(`%${planFilter.replace(' Members', '')}%`);
-      query += ' AND plan NOT LIKE ?';
-      params.push('%Non-Member%');
-    } else {
-      query += ' AND plan LIKE ?';
-      params.push(`%${planFilter}%`);
-    }
-  }
-  
-  query += ' ORDER BY id DESC';
-  const members = db.prepare(query).all(...params);
-
-  // If year & month provided, compute actual monthly revenue per member
-  if (req.query.year && req.query.month) {
-    const year = parseInt(req.query.year);
-    const month = parseInt(req.query.month);
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
-    const daysInMonth = new Date(year, month, 0).getDate();
-
-    // Pre-compute payment schedule for this month
-    const allMembers = db.prepare('SELECT * FROM members').all();
-    const payMap = {}; // member_id -> total payment revenue this month
-    for (const m of allMembers) {
-      if (!m.joined_date) continue;
-      const { category, period, type } = parsePlan(m.plan);
-      const rate = lookupRate(category, type);
-      if (!rate) continue;
-      const joinedDate = m.joined_date.split('T')[0];
-      let totalPay = 0;
-      if (joinedDate >= startDate && joinedDate <= endDate) {
-        if (period === 'Monthly') totalPay += rate.monthly;
-        else if (period === 'Daily') totalPay += rate.daily;
-        else if (period === 'Semi-Monthly') totalPay += rate.semi;
-        if (!m.plan.includes('Non-Member')) totalPay += 300;
-      }
-      if (period === 'Semi-Monthly') {
-        const joinD = new Date(joinedDate);
-        for (let i = 1; i <= 48; i++) {
-          const nextPay = new Date(joinD);
-          nextPay.setDate(nextPay.getDate() + i * 15);
-          const payStr = nextPay.toISOString().split('T')[0];
-          if (payStr > endDate) break;
-          if (payStr >= startDate) totalPay += rate.semi;
-        }
-      }
-      payMap[m.member_id] = totalPay;
-    }
-
-    // Daily check-in revenue for this month
-    const checkinRevMap = {};
-    const checkins = db.prepare(`
-      SELECT c.member_id, COUNT(*) as cnt
-      FROM check_in_logs c
-      WHERE DATE(c.checked_in_at, 'localtime') BETWEEN ? AND ?
-      GROUP BY c.member_id
-    `).all(startDate, endDate);
-    for (const c of checkins) checkinRevMap[c.member_id] = c.cnt;
-
-    const result = members.map(m => {
-      const { category, period, type } = parsePlan(m.plan);
-      const rate = lookupRate(category, type);
-      let revenue = 0;
-      if (period === 'Daily' && rate) {
-        const ciCount = checkinRevMap[m.member_id] ?? 0;
-        revenue = ciCount * rate.daily + (payMap[m.member_id] ?? 0);
-      } else {
-        revenue = payMap[m.member_id] ?? 0;
-      }
-      return { ...m, monthly_revenue: revenue };
-    });
-    return res.json(result);
-  }
-
-  // No year/month — show the raw period rate (not an estimated monthly)
-  const result = members.map(m => {
-    const parsed = parsePlan(m.plan);
-    const rate = lookupRate(parsed.category, parsed.type);
-    let amount = 0;
-    if (rate) {
-      if (parsed.period === 'Monthly') amount = rate.monthly;
-      else if (parsed.period === 'Semi-Monthly') amount = rate.semi;
-      else if (parsed.period === 'Daily') amount = rate.daily;
-    }
-    return { ...m, monthly_revenue: amount };
-  });
-  res.json(result);
-});
-
-app.post('/api/members', authMiddleware, (req, res) => {
-  const { name, contact, plan, joined_date, expiry_date, address, membership_expiry } = req.body;
-  if (!name || !contact || !plan) return res.status(400).json({ error: 'Name, contact, and plan are required.' });
-  
-  const existingName = db.prepare('SELECT id FROM members WHERE LOWER(name) = LOWER(?)').get(name.trim());
-  if (existingName) {
-    return res.status(400).json({ error: 'A member with this name already exists.' });
-  }
-  
-  const member_id = generateMemberId();
-  const tempMember = { joined_date, expiry_date };
-  const status = calculateStatus(tempMember);
-  
-  db.prepare(`
-    INSERT INTO members (member_id, name, contact, plan, status, joined_date, expiry_date, address, membership_expiry)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(member_id, name.trim(), contact, plan, status, joined_date || null, expiry_date || null, address || '', membership_expiry || null);
-  
-  const member = db.prepare('SELECT * FROM members WHERE member_id = ?').get(member_id);
-  res.status(201).json(member);
-});
-
-app.put('/api/members/:id', authMiddleware, (req, res) => {
-  const { id } = req.params;
-  const { name, contact, plan, joined_date, expiry_date, address, membership_expiry } = req.body;
-  
-  const existing = db.prepare('SELECT * FROM members WHERE id = ?').get(id);
-  if (!existing) return res.status(404).json({ error: 'Member not found.' });
-  
-  if (name && name.trim().toLowerCase() !== existing.name.toLowerCase()) {
-    const duplicate = db.prepare('SELECT id FROM members WHERE LOWER(name) = LOWER(?) AND id != ?').get(name.trim(), id);
-    if (duplicate) {
-      return res.status(400).json({ error: 'A member with this name already exists.' });
-    }
-  }
-
-  const tempMember = { joined_date: joined_date || existing.joined_date, expiry_date: expiry_date || existing.expiry_date };
-  const status = calculateStatus(tempMember);
-  
-  db.prepare(`
-    UPDATE members SET name = ?, contact = ?, plan = ?, status = ?, joined_date = ?, expiry_date = ?, address = ?, membership_expiry = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(
-    name ? name.trim() : existing.name,
-    contact || existing.contact,
-    plan || existing.plan,
-    status,
-    joined_date || existing.joined_date,
-    expiry_date || existing.expiry_date,
-    address !== undefined ? address : existing.address,
-    membership_expiry || existing.membership_expiry,
-    id
-  );
-  
-  const updated = db.prepare('SELECT * FROM members WHERE id = ?').get(id);
-  res.json(updated);
-});
-
-app.delete('/api/members/:id', authMiddleware, (req, res) => {
-  const { id } = req.params;
-  const existing = db.prepare('SELECT * FROM members WHERE id = ?').get(id);
-  if (!existing) return res.status(404).json({ error: 'Member not found.' });
-  
-  db.prepare('DELETE FROM members WHERE id = ?').run(id);
-  res.status(204).end();
-});
-
-app.get('/api/members/:memberId/checkins', authMiddleware, (req, res) => {
-  const { memberId } = req.params;
-  const member = db.prepare('SELECT 1 FROM members WHERE member_id = ?').get(memberId);
-  if (!member) return res.status(404).json({ error: 'Member not found.' });
-  
-  const checkinsRaw = db.prepare(`
-    SELECT id, checked_in_at, DATETIME(checked_in_at, 'localtime') as local_dt, status
-    FROM check_in_logs 
-    WHERE member_id = ?
-    ORDER BY checked_in_at DESC
-  `).all(memberId);
-  
-  const checkins = checkinsRaw.map(c => ({
-    id: c.id,
-    time: formatLocalTime(c.local_dt),
-    date: c.local_dt ? c.local_dt.split(' ')[0] : '',
-    status: c.status
-  }));
-  
-  res.json(checkins);
-});
-
-// ─── Check-ins ──────────────────────────────────────────────
-app.get('/api/checkins', authMiddleware, (req, res) => {
-  const queryDate = req.query.date || new Date().toLocaleDateString('sv');
-  const checkInsRaw = db.prepare(`
-    SELECT c.id, c.member_id as memberId, c.member_name as memberName,
-           c.plan, DATETIME(c.checked_in_at, 'localtime') as local_dt, c.status
-    FROM check_in_logs c
-    WHERE DATE(c.checked_in_at, 'localtime') = ?
-    ORDER BY c.checked_in_at DESC
-  `).all(queryDate);
-
-  const checkIns = checkInsRaw.map(c => {
-    const parsed = parsePlan(c.plan);
-    const rate = lookupRate(parsed.category, parsed.type);
-    const amount = rate && parsed.period === 'Daily' ? rate.daily : 0;
-    return {
-      id: c.id,
-      memberId: c.memberId,
-      memberName: c.memberName,
-      time: formatLocalTime(c.local_dt),
-      status: c.status,
-      amount,
-    };
-  });
-
-  res.json(checkIns);
-});
-
-app.post('/api/checkins', authMiddleware, (req, res) => {
-  const { member_id } = req.body;
-  if (!member_id) return res.status(400).json({ error: 'Member ID is required.' });
-  
-  const member = db.prepare('SELECT * FROM members WHERE member_id = ?').get(member_id);
-  if (!member) return res.status(404).json({ error: `Member ${member_id} not found.` });
-  
-  // Check if member has already checked in today (using local time)
-  const todayDate = new Date().toLocaleDateString('sv');
-  const alreadyCheckedIn = db.prepare(`
-    SELECT 1 FROM check_in_logs 
-    WHERE member_id = ? AND DATE(checked_in_at, 'localtime') = ?
-  `).get(member.member_id, todayDate);
-  
-  if (alreadyCheckedIn) {
-    return res.status(400).json({ error: `Member ${member.name} has already timed in today.` });
-  }
-  
-  // Update status
-  const currentStatus = calculateStatus(member);
-  if (currentStatus === 'Expired') {
-    return res.status(403).json({ error: `Member ${member.name}'s membership has expired.` });
-  }
-
-  if (currentStatus !== member.status) {
-    db.prepare('UPDATE members SET status = ? WHERE id = ?').run(currentStatus, member.id);
-  }
-  
-  db.prepare(`
-    INSERT INTO check_in_logs (member_id, member_name, plan, status) VALUES (?, ?, ?, ?)
-  `).run(member.member_id, member.name, member.plan, currentStatus);
-  
-  res.status(201).json({ memberName: member.name, status: currentStatus });
-});
-
-// ─── Payment transactions ─────────────────────────────────
-app.get('/api/payments', authMiddleware, (req, res) => {
-  const queryDate = req.query.date;
-  if (!queryDate) return res.status(400).json({ error: 'date query param is required (YYYY-MM-DD)' });
-
-  const members = db.prepare('SELECT * FROM members').all();
-  const payments = [];
-
-  for (const m of members) {
-    if (!m.joined_date) continue;
-    const { category, period, type } = parsePlan(m.plan);
-    const rate = lookupRate(category, type);
-    if (!rate) continue;
-
-    const joinedDate = m.joined_date.split('T')[0];
-    let amount = 0;
-
-    if (joinedDate === queryDate) {
-      if (period === 'Daily') amount += rate.daily;
-      else if (period === 'Monthly') amount += rate.monthly;
-      else if (period === 'Semi-Monthly') amount += rate.semi;
-      // Annual membership fee
-      if (!m.plan.includes('Non-Member')) amount += 300;
-    } else if (period === 'Semi-Monthly') {
-      const joinD = new Date(joinedDate);
-      for (let i = 1; i <= 48; i++) {
-        const nextPay = new Date(joinD);
-        nextPay.setDate(nextPay.getDate() + i * 15);
-        const payStr = nextPay.toISOString().split('T')[0];
-        if (payStr > queryDate) break;
-        if (payStr === queryDate) { amount += rate.semi; break; }
-      }
-    }
-
-    if (amount > 0) {
-      payments.push({
-        member_id: m.member_id,
-        name: m.name,
-        plan: m.plan,
-        period,
-        amount,
-      });
-    }
-  }
-
-  payments.sort((a, b) => b.amount - a.amount);
-  res.json(payments);
-});
-
-// ─── Settings ───────────────────────────────────────────────
-app.get('/api/settings', authMiddleware, (_req, res) => {
-  const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-  if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '' });
-  res.json({
-    gymName: settings.gym_name,
-    contact: settings.contact,
-    address: settings.address,
-    announcement: settings.announcement
-  });
-});
-
-app.put('/api/settings', authMiddleware, (req, res) => {
-  const { gymName, contact, address, announcement } = req.body;
-  db.prepare(`
-    UPDATE settings SET gym_name = ?, contact = ?, address = ?, announcement = ? WHERE id = 1
-  `).run(gymName || '', contact || '', address || '', announcement || '');
-  res.json({ message: 'Settings saved.' });
-});
-
-// ─── Revenue ─────────────────────────────────────────────
-const { Document: DocxDocument, Packer: DocxPacker, Paragraph: DocxParagraph, Table: DocxTable, TableRow: DocxTableRow, TableCell: DocxTableCell, TextRun: DocxTextRun, WidthType: DocxWidthType, AlignmentType: DocxAlignmentType, BorderStyle: DocxBorderStyle, HeadingLevel: DocxHeadingLevel } = require('docx');
-
-const RATE_TABLE = [
-  { category: 'Regular Members', type: 'No Treadmill', monthly: 600, semi: 300, daily: 60 },
-  { category: 'Regular Members', type: 'With Treadmill', monthly: 800, semi: 400, daily: 80 },
-  { category: 'Student/Senior Members', type: 'No Treadmill', monthly: 500, semi: 250, daily: 50 },
-  { category: 'Student/Senior Members', type: 'With Treadmill', monthly: 700, semi: 350, daily: 70 },
-  { category: 'Regular Non-Members', type: 'No Treadmill', monthly: 700, semi: 350, daily: 70 },
-  { category: 'Regular Non-Members', type: 'With Treadmill', monthly: 900, semi: 450, daily: 90 },
-  { category: 'Student/Senior Non-Members', type: 'No Treadmill', monthly: 600, semi: 300, daily: 60 },
-  { category: 'Student/Senior Non-Members', type: 'With Treadmill', monthly: 800, semi: 400, daily: 80 },
-];
 
 function parsePlan(plan) {
   const isNonMember = plan.includes('Non-Member');
@@ -880,25 +68,52 @@ function lookupRate(category, type) {
   return RATE_TABLE.find(r => r.category === category && r.type === type);
 }
 
-function computeRevenueForDateRange(db, year, month) {
+async function generateMemberId() {
+  const { data } = await supabase
+    .from('members')
+    .select('member_id')
+    .order('id', { ascending: false })
+    .limit(1);
+  if (!data || data.length === 0) return 'M-001';
+  const num = parseInt(data[0].member_id.replace('M-', ''), 10) + 1;
+  return `M-${String(num).padStart(3, '0')}`;
+}
+
+async function updateAllMemberStatuses() {
+  const { data: allMembers } = await supabase.from('members').select('*');
+  if (!allMembers) return;
+  for (const m of allMembers) {
+    const newStatus = calculateStatus(m);
+    if (newStatus !== m.status) {
+      await supabase.from('members').update({ status: newStatus }).eq('id', m.id);
+    }
+  }
+}
+
+async function computeRevenueForDateRange(year, month) {
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0);
   const daysInMonth = endDate.getDate();
 
-  const members = db.prepare('SELECT * FROM members').all();
+  const { data: members } = await supabase.from('members').select('*');
 
   const startStr = startDate.toISOString().split('T')[0];
   const endStr = endDate.toISOString().split('T')[0];
 
-  const checkins = db.prepare(`
-    SELECT c.*, DATE(c.checked_in_at, 'localtime') as checkin_date
-    FROM check_in_logs c
-    WHERE DATE(c.checked_in_at, 'localtime') BETWEEN ? AND ?
-    ORDER BY c.checked_in_at
-  `).all(startStr, endStr);
+  const { startISO, endISO } = {
+    startISO: new Date(`${startStr}T00:00:00`).toISOString(),
+    endISO: new Date(`${endStr}T23:59:59.999`).toISOString(),
+  };
+
+  const { data: checkins } = await supabase
+    .from('check_in_logs')
+    .select('*')
+    .gte('checked_in_at', startISO)
+    .lte('checked_in_at', endISO)
+    .order('checked_in_at', { ascending: true });
 
   const memberMap = {};
-  for (const m of members) memberMap[m.member_id] = m;
+  if (members) for (const m of members) memberMap[m.member_id] = m;
 
   const dailyMap = {};
   for (let d = 1; d <= daysInMonth; d++) {
@@ -906,74 +121,73 @@ function computeRevenueForDateRange(db, year, month) {
     dailyMap[dateStr] = { checkinRevenue: 0, paymentRevenue: 0, total: 0, checkinCount: 0, paymentCount: 0 };
   }
 
-  // Track actual revenue per category
   const categoryRevenue = {};
 
-  // Process check-ins (daily plan members only)
-  for (const c of checkins) {
-    const member = memberMap[c.member_id];
-    if (!member) continue;
-    const { category, period, type } = parsePlan(member.plan);
-    if (period === 'Daily') {
-      const rate = lookupRate(category, type);
-      if (rate && dailyMap[c.checkin_date]) {
-        dailyMap[c.checkin_date].checkinRevenue += rate.daily;
-        dailyMap[c.checkin_date].total += rate.daily;
-        dailyMap[c.checkin_date].checkinCount++;
-        if (!categoryRevenue[category]) categoryRevenue[category] = 0;
-        categoryRevenue[category] += rate.daily;
+  if (checkins) {
+    for (const c of checkins) {
+      const member = memberMap[c.member_id];
+      if (!member) continue;
+      const { category, period, type } = parsePlan(member.plan);
+      if (period === 'Daily') {
+        const rate = lookupRate(category, type);
+        const d = new Date(c.checked_in_at);
+        const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (rate && dailyMap[localDate]) {
+          dailyMap[localDate].checkinRevenue += rate.daily;
+          dailyMap[localDate].total += rate.daily;
+          dailyMap[localDate].checkinCount++;
+          if (!categoryRevenue[category]) categoryRevenue[category] = 0;
+          categoryRevenue[category] += rate.daily;
+        }
       }
     }
   }
 
-  // Process member payments
-  for (const m of members) {
-    if (!m.joined_date) continue;
-    const { category, period, type } = parsePlan(m.plan);
-    const rate = lookupRate(category, type);
-    if (!rate) continue;
+  if (members) {
+    for (const m of members) {
+      if (!m.joined_date) continue;
+      const { category, period, type } = parsePlan(m.plan);
+      const rate = lookupRate(category, type);
+      if (!rate) continue;
 
-    const joinedDate = m.joined_date.split('T')[0];
+      const joinedDate = m.joined_date.split('T')[0];
+      if (dailyMap[joinedDate]) {
+        let amount = 0;
+        if (period === 'Daily') amount = rate.daily;
+        else if (period === 'Monthly') amount = rate.monthly;
+        else if (period === 'Semi-Monthly') amount = rate.semi;
+        if (amount > 0) {
+          dailyMap[joinedDate].paymentRevenue += amount;
+          dailyMap[joinedDate].total += amount;
+          dailyMap[joinedDate].paymentCount++;
+          if (!categoryRevenue[category]) categoryRevenue[category] = 0;
+          categoryRevenue[category] += amount;
+        }
+      }
 
-    // Payment on joined_date (plan rate)
-    if (dailyMap[joinedDate]) {
-      let amount = 0;
-      if (period === 'Daily') amount = rate.daily;
-      else if (period === 'Monthly') amount = rate.monthly;
-      else if (period === 'Semi-Monthly') amount = rate.semi;
-      if (amount > 0) {
-        dailyMap[joinedDate].paymentRevenue += amount;
-        dailyMap[joinedDate].total += amount;
+      if (period === 'Semi-Monthly') {
+        const joinD = new Date(joinedDate);
+        for (let i = 1; i <= 48; i++) {
+          const nextPay = new Date(joinD);
+          nextPay.setDate(nextPay.getDate() + i * 15);
+          const payStr = nextPay.toISOString().split('T')[0];
+          if (!dailyMap[payStr]) break;
+          dailyMap[payStr].paymentRevenue += rate.semi;
+          dailyMap[payStr].total += rate.semi;
+          dailyMap[payStr].paymentCount++;
+          if (!categoryRevenue[category]) categoryRevenue[category] = 0;
+          categoryRevenue[category] += rate.semi;
+          if (nextPay > endDate) break;
+        }
+      }
+
+      if (!m.plan.includes('Non-Member') && dailyMap[joinedDate]) {
+        dailyMap[joinedDate].paymentRevenue += 300;
+        dailyMap[joinedDate].total += 300;
         dailyMap[joinedDate].paymentCount++;
         if (!categoryRevenue[category]) categoryRevenue[category] = 0;
-        categoryRevenue[category] += amount;
+        categoryRevenue[category] += 300;
       }
-    }
-
-    // Semi-monthly recurring (every 15 days from join)
-    if (period === 'Semi-Monthly') {
-      const joinD = new Date(joinedDate);
-      for (let i = 1; i <= 48; i++) {
-        const nextPay = new Date(joinD);
-        nextPay.setDate(nextPay.getDate() + i * 15);
-        const payStr = nextPay.toISOString().split('T')[0];
-        if (!dailyMap[payStr]) break;
-        dailyMap[payStr].paymentRevenue += rate.semi;
-        dailyMap[payStr].total += rate.semi;
-        dailyMap[payStr].paymentCount++;
-        if (!categoryRevenue[category]) categoryRevenue[category] = 0;
-        categoryRevenue[category] += rate.semi;
-        if (nextPay > endDate) break;
-      }
-    }
-
-    // Annual membership fee (₱300 for Members)
-    if (!m.plan.includes('Non-Member') && dailyMap[joinedDate]) {
-      dailyMap[joinedDate].paymentRevenue += 300;
-      dailyMap[joinedDate].total += 300;
-      dailyMap[joinedDate].paymentCount++;
-      if (!categoryRevenue[category]) categoryRevenue[category] = 0;
-      categoryRevenue[category] += 300;
     }
   }
 
@@ -988,45 +202,684 @@ function computeRevenueForDateRange(db, year, month) {
       paymentCount: data.paymentCount,
     }));
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const currentYear = String(new Date().getFullYear());
+  const todayStr = new Date(Date.now()).toISOString().split('T')[0];
   let todayRevenue = 0, thisMonthRevenue = 0, thisYearRevenue = 0;
 
   for (const day of dailyBreakdown) {
     thisMonthRevenue += day.total;
     if (day.date === todayStr) todayRevenue += day.total;
-    if (day.date.startsWith(currentYear)) thisYearRevenue += day.total;
+    if (day.date.startsWith(String(new Date().getFullYear()))) thisYearRevenue += day.total;
   }
 
-  // Category breakdown from actual revenue
   const categoryBreakdown = Object.entries(categoryRevenue)
-    .map(([category, revenue]) => {
-      const count = members.filter(m => parsePlan(m.plan).category === category).length;
-      return { category, memberCount: count, monthlyRevenue: Math.round(revenue) };
-    })
+    .map(([category, revenue]) => ({
+      category,
+      memberCount: members ? members.filter(m => parsePlan(m.plan).category === category).length : 0,
+      monthlyRevenue: Math.round(revenue),
+    }))
     .sort((a, b) => b.monthlyRevenue - a.monthlyRevenue);
 
   return { todayRevenue, thisMonthRevenue, thisYearRevenue, dailyBreakdown, categoryBreakdown, month, year };
 }
 
-app.get('/api/revenue', authMiddleware, (req, res) => {
-  const now = new Date();
-  const year = parseInt(req.query.year) || now.getFullYear();
-  const month = parseInt(req.query.month) || (now.getMonth() + 1);
-  const data = computeRevenueForDateRange(db, year, month);
+const RATE_TABLE = [
+  { category: 'Regular Members', type: 'No Treadmill', monthly: 600, semi: 300, daily: 60 },
+  { category: 'Regular Members', type: 'With Treadmill', monthly: 800, semi: 400, daily: 80 },
+  { category: 'Student/Senior Members', type: 'No Treadmill', monthly: 500, semi: 250, daily: 50 },
+  { category: 'Student/Senior Members', type: 'With Treadmill', monthly: 700, semi: 350, daily: 70 },
+  { category: 'Regular Non-Members', type: 'No Treadmill', monthly: 700, semi: 350, daily: 70 },
+  { category: 'Regular Non-Members', type: 'With Treadmill', monthly: 900, semi: 450, daily: 90 },
+  { category: 'Student/Senior Non-Members', type: 'No Treadmill', monthly: 600, semi: 300, daily: 60 },
+  { category: 'Student/Senior Non-Members', type: 'With Treadmill', monthly: 800, semi: 400, daily: 80 },
+];
 
-  let yearTotal = 0;
-  for (let m = 1; m <= 12; m++) {
-    if (m === month) {
-      yearTotal += data.thisMonthRevenue;
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+const app = express();
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || origin.startsWith('http://localhost') || origin === 'file://' || origin.startsWith('app://')) {
+      callback(null, true);
     } else {
-      const md = computeRevenueForDateRange(db, year, m);
-      yearTotal += md.thisMonthRevenue;
+      callback(new Error('Not allowed by CORS'));
     }
   }
-  data.thisYearRevenue = yearTotal;
+}));
+app.use(express.json());
 
-  res.json(data);
+// ─── Auth Routes ────────────────────────────────────────────
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+
+    const { data: user } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: 'Invalid credentials.' });
+    }
+
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ access_token: token, role: user.role });
+  } catch (err) {
+    res.status(500).json({ error: 'Login failed.' });
+  }
+});
+
+app.post('/api/logout', authMiddleware, (_req, res) => {
+  res.json({ message: 'Logged out successfully.' });
+});
+
+// ─── User Profile Routes ────────────────────────────────────
+app.get('/api/users/me', authMiddleware, async (req, res) => {
+  try {
+    const { data: user } = await supabase.from('users').select('id, email, role, created_at').eq('id', req.user.id).maybeSingle();
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user profile.' });
+  }
+});
+
+app.put('/api/users/me/password', authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current password and new password are required.' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    }
+
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).maybeSingle();
+    if (!user || !bcrypt.compareSync(currentPassword, user.password)) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    const hashed = bcrypt.hashSync(newPassword, 10);
+    const { error } = await supabase.from('users').update({ password: hashed }).eq('id', req.user.id);
+    if (error) throw error;
+    res.json({ message: 'Password updated successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update password.' });
+  }
+});
+
+app.put('/api/users/me/email', authMiddleware, async (req, res) => {
+  try {
+    const { newEmail, password } = req.body;
+    if (!newEmail || !password) {
+      return res.status(400).json({ error: 'New email and password are required.' });
+    }
+
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).maybeSingle();
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: 'Password is incorrect.' });
+    }
+
+    const { data: existing } = await supabase.from('users').select('id').eq('email', newEmail).neq('id', req.user.id).maybeSingle();
+    if (existing) {
+      return res.status(409).json({ error: 'Email is already in use.' });
+    }
+
+    const { error } = await supabase.from('users').update({ email: newEmail }).eq('id', req.user.id);
+    if (error) throw error;
+
+    const token = jwt.sign({ id: user.id, email: newEmail, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ access_token: token, email: newEmail });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update email.' });
+  }
+});
+
+// ─── Dashboard ──────────────────────────────────────────────
+app.get('/api/dashboard', authMiddleware, async (_req, res) => {
+  try {
+    await updateAllMemberStatuses();
+
+    const { count: totalMembers } = await supabase.from('members').select('*', { count: 'exact', head: true });
+    const { count: activeMembers } = await supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'Active');
+
+    const { startISO, endISO } = getLocalDateRange();
+    const { count: todayCheckIns } = await supabase.from('check_in_logs').select('*', { count: 'exact', head: true }).gte('checked_in_at', startISO).lte('checked_in_at', endISO);
+
+    const { data: recentCheckInsRaw } = await supabase
+      .from('check_in_logs')
+      .select('id, member_name, checked_in_at, plan, status')
+      .gte('checked_in_at', startISO)
+      .lte('checked_in_at', endISO)
+      .order('checked_in_at', { ascending: false })
+      .limit(10);
+
+    const recentCheckIns = (recentCheckInsRaw || []).map(c => ({
+      id: c.id,
+      memberName: c.member_name,
+      time: formatLocalTime(c.checked_in_at),
+      plan: c.plan,
+      status: c.status,
+    }));
+
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const sevenDaysLater = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7);
+    const sevenDaysStr = `${sevenDaysLater.getFullYear()}-${String(sevenDaysLater.getMonth() + 1).padStart(2, '0')}-${String(sevenDaysLater.getDate()).padStart(2, '0')}`;
+
+    const { data: expiringMembers } = await supabase
+      .from('members')
+      .select('id, member_id, name, contact, plan, status, expiry_date, membership_expiry')
+      .or(`status.eq.Expiring Soon,and(membership_expiry.gte.${todayStr},membership_expiry.lte.${sevenDaysStr})`)
+      .order('expiry_date', { ascending: true, nullsFirst: false });
+
+    const { data: expiredMembers } = await supabase
+      .from('members')
+      .select('id, member_id, name, contact, plan, status, expiry_date, membership_expiry')
+      .or(`status.eq.Expired,and(membership_expiry.lt.${todayStr})`)
+      .order('expiry_date', { ascending: false, nullsFirst: false })
+      .limit(50);
+
+    const now = new Date();
+    const revYear = now.getFullYear();
+    const revMonth = now.getMonth() + 1;
+    const revData = await computeRevenueForDateRange(revYear, revMonth);
+    let revYearTotal = revData.thisMonthRevenue;
+    for (let m = 1; m <= 12; m++) {
+      if (m !== revMonth) {
+        const md = await computeRevenueForDateRange(revYear, m);
+        revYearTotal += md.thisMonthRevenue;
+      }
+    }
+
+    res.json({
+      activeMembers: activeMembers || 0,
+      totalMembers: totalMembers || 0,
+      todayCheckIns: todayCheckIns || 0,
+      recentCheckIns,
+      expiringMembers: expiringMembers || [],
+      expiredMembers: expiredMembers || [],
+      todayRevenue: revData.todayRevenue,
+      thisMonthRevenue: revData.thisMonthRevenue,
+      thisYearRevenue: revYearTotal,
+    });
+  } catch (e) {
+    console.error('Dashboard error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Members ────────────────────────────────────────────────
+app.get('/api/members', authMiddleware, async (req, res) => {
+  try {
+    await updateAllMemberStatuses();
+
+    let query = supabase.from('members').select('*');
+    const hasParam = p => req.query[p] !== undefined && req.query[p] !== '';
+
+    if (hasParam('search') || hasParam('status') || hasParam('plan')) {
+      const search = req.query.search;
+      const status = req.query.status;
+      const planFilter = req.query.plan;
+
+      const orConditions = [];
+
+      if (search) {
+        const s = search.trim();
+        orConditions.push(`name.ilike.%${s}%`);
+        orConditions.push(`member_id.ilike.%${s}%`);
+        orConditions.push(`contact.ilike.%${s}%`);
+
+        const digitMatch = s.match(/^(\d+)$/);
+        if (digitMatch) {
+          orConditions.push(`member_id.eq.M-${digitMatch[1].padStart(3, '0')}`);
+        }
+        const mMatch = s.match(/^[Mm](\d+)$/);
+        if (mMatch) {
+          orConditions.push(`member_id.eq.M-${mMatch[1].padStart(3, '0')}`);
+        }
+        const hyphenMatch = s.match(/^[Mm]-(\d+)$/);
+        if (hyphenMatch) {
+          orConditions.push(`member_id.eq.M-${hyphenMatch[1].padStart(3, '0')}`);
+        }
+      }
+
+      if (orConditions.length > 0) {
+        query = query.or(orConditions.join(','));
+      }
+
+      if (status && status !== 'All Status') {
+        if (status === 'Annual Membership') {
+          query = query.not.ilike('plan', '%Non-Member%');
+        } else {
+          query = query.eq('status', status);
+        }
+      }
+
+      if (planFilter) {
+        if (planFilter.includes('Non-Members')) {
+          const base = planFilter.replace(' Non-Members', '');
+          query = query.ilike('plan', `%${base}%`).ilike('plan', '%Non-Member%');
+        } else if (planFilter.includes('Members')) {
+          const base = planFilter.replace(' Members', '');
+          query = query.ilike('plan', `%${base}%`).not.ilike('plan', '%Non-Member%');
+        } else {
+          query = query.ilike('plan', `%${planFilter}%`);
+        }
+      }
+    }
+
+    query = query.order('id', { ascending: false });
+    const { data: members } = await query;
+
+    if (!members) return res.json([]);
+
+    if (hasParam('year') && hasParam('month')) {
+      const year = parseInt(req.query.year);
+      const month = parseInt(req.query.month);
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+
+      const { data: allM } = await supabase.from('members').select('*');
+      const payMap = {};
+      if (allM) {
+        for (const m of allM) {
+          if (!m.joined_date) continue;
+          const { category, period, type } = parsePlan(m.plan);
+          const rate = lookupRate(category, type);
+          if (!rate) continue;
+          const joinedDate = m.joined_date.split('T')[0];
+          let totalPay = 0;
+          if (joinedDate >= startDate && joinedDate <= endDate) {
+            if (period === 'Monthly') totalPay += rate.monthly;
+            else if (period === 'Daily') totalPay += rate.daily;
+            else if (period === 'Semi-Monthly') totalPay += rate.semi;
+            if (!m.plan.includes('Non-Member')) totalPay += 300;
+          }
+          if (period === 'Semi-Monthly') {
+            const joinD = new Date(joinedDate);
+            for (let i = 1; i <= 48; i++) {
+              const nextPay = new Date(joinD);
+              nextPay.setDate(nextPay.getDate() + i * 15);
+              const payStr = nextPay.toISOString().split('T')[0];
+              if (payStr > endDate) break;
+              if (payStr >= startDate) totalPay += rate.semi;
+            }
+          }
+          payMap[m.member_id] = totalPay;
+        }
+      }
+
+      const { startISO: ciStart, endISO: ciEnd } = {
+        startISO: new Date(`${startDate}T00:00:00`).toISOString(),
+        endISO: new Date(`${endDate}T23:59:59.999`).toISOString(),
+      };
+      const { data: checkins } = await supabase
+        .from('check_in_logs')
+        .select('member_id')
+        .gte('checked_in_at', ciStart)
+        .lte('checked_in_at', ciEnd);
+      const checkinRevMap = {};
+      if (checkins) {
+        for (const c of checkins) {
+          checkinRevMap[c.member_id] = (checkinRevMap[c.member_id] || 0) + 1;
+        }
+      }
+
+      const result = members.map(m => {
+        const { category, period, type } = parsePlan(m.plan);
+        const rate = lookupRate(category, type);
+        let revenue = 0;
+        if (period === 'Daily' && rate) {
+          const ciCount = checkinRevMap[m.member_id] || 0;
+          revenue = ciCount * rate.daily + (payMap[m.member_id] || 0);
+        } else {
+          revenue = payMap[m.member_id] || 0;
+        }
+        return { ...m, monthly_revenue: revenue };
+      });
+      return res.json(result);
+    }
+
+    const result = members.map(m => {
+      const parsed = parsePlan(m.plan);
+      const rate = lookupRate(parsed.category, parsed.type);
+      let amount = 0;
+      if (rate) {
+        if (parsed.period === 'Monthly') amount = rate.monthly;
+        else if (parsed.period === 'Semi-Monthly') amount = rate.semi;
+        else if (parsed.period === 'Daily') amount = rate.daily;
+      }
+      return { ...m, monthly_revenue: amount };
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('Members list error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/members', authMiddleware, async (req, res) => {
+  try {
+    const { name, contact, plan, joined_date, expiry_date, address, membership_expiry } = req.body;
+    if (!name || !contact || !plan) return res.status(400).json({ error: 'Name, contact, and plan are required.' });
+
+    const { data: existingName } = await supabase.from('members').select('id').ilike('name', name.trim()).maybeSingle();
+    if (existingName) {
+      return res.status(400).json({ error: 'A member with this name already exists.' });
+    }
+
+    const member_id = await generateMemberId();
+    const tempMember = { joined_date, expiry_date };
+    const status = calculateStatus(tempMember);
+
+    const { data: member, error } = await supabase.from('members').insert({
+      member_id,
+      name: name.trim(),
+      contact,
+      plan,
+      status,
+      joined_date: joined_date || null,
+      expiry_date: expiry_date || null,
+      address: address || '',
+      membership_expiry: membership_expiry || null,
+    }).select().single();
+
+    if (error) throw error;
+    res.status(201).json(member);
+  } catch (err) {
+    console.error('Create member error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/members/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, contact, plan, joined_date, expiry_date, address, membership_expiry } = req.body;
+
+    const { data: existing } = await supabase.from('members').select('*').eq('id', id).maybeSingle();
+    if (!existing) return res.status(404).json({ error: 'Member not found.' });
+
+    if (name && name.trim().toLowerCase() !== existing.name.toLowerCase()) {
+      const { data: duplicate } = await supabase.from('members').select('id').ilike('name', name.trim()).neq('id', id).maybeSingle();
+      if (duplicate) {
+        return res.status(400).json({ error: 'A member with this name already exists.' });
+      }
+    }
+
+    const tempMember = { joined_date: joined_date || existing.joined_date, expiry_date: expiry_date || existing.expiry_date };
+    const status = calculateStatus(tempMember);
+
+    const { data: updated, error } = await supabase.from('members').update({
+      name: name ? name.trim() : existing.name,
+      contact: contact || existing.contact,
+      plan: plan || existing.plan,
+      status,
+      joined_date: joined_date || existing.joined_date,
+      expiry_date: expiry_date || existing.expiry_date,
+      address: address !== undefined ? address : existing.address,
+      membership_expiry: membership_expiry || existing.membership_expiry,
+      updated_at: new Date().toISOString(),
+    }).eq('id', id).select().single();
+
+    if (error) throw error;
+    res.json(updated);
+  } catch (err) {
+    console.error('Update member error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/members/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: existing, error: fetchErr } = await supabase.from('members').select('*').eq('id', id).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) return res.status(404).json({ error: 'Member not found.' });
+
+    const { error } = await supabase.from('members').delete().eq('id', id);
+    if (error) throw error;
+    res.status(204).end();
+  } catch (err) {
+    console.error('Delete member error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/members/:memberId/checkins', authMiddleware, async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    const { data: member } = await supabase.from('members').select('member_id').eq('member_id', memberId).maybeSingle();
+    if (!member) return res.status(404).json({ error: 'Member not found.' });
+
+    const { data: checkinsRaw } = await supabase
+      .from('check_in_logs')
+      .select('id, checked_in_at, status')
+      .eq('member_id', memberId)
+      .order('checked_in_at', { ascending: false });
+
+    const checkins = (checkinsRaw || []).map(c => {
+      const d = new Date(c.checked_in_at);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return {
+        id: c.id,
+        time: formatLocalTime(c.checked_in_at),
+        date: dateStr,
+        status: c.status,
+      };
+    });
+
+    res.json(checkins);
+  } catch (err) {
+    console.error('Member checkins error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Check-ins ──────────────────────────────────────────────
+app.get('/api/checkins', authMiddleware, async (req, res) => {
+  try {
+    const queryDate = req.query.date || new Date().toISOString().split('T')[0];
+    const { startISO, endISO } = getLocalDateRange(queryDate);
+
+    const { data: checkInsRaw } = await supabase
+      .from('check_in_logs')
+      .select('id, member_id, member_name, plan, checked_in_at, status')
+      .gte('checked_in_at', startISO)
+      .lte('checked_in_at', endISO)
+      .order('checked_in_at', { ascending: false });
+
+    const checkIns = (checkInsRaw || []).map(c => {
+      const parsed = parsePlan(c.plan);
+      const rate = lookupRate(parsed.category, parsed.type);
+      const amount = rate && parsed.period === 'Daily' ? rate.daily : 0;
+      return {
+        id: c.id,
+        memberId: c.member_id,
+        memberName: c.member_name,
+        time: formatLocalTime(c.checked_in_at),
+        status: c.status,
+        amount,
+      };
+    });
+
+    res.json(checkIns);
+  } catch (err) {
+    console.error('Checkins error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/checkins', authMiddleware, async (req, res) => {
+  try {
+    const { member_id } = req.body;
+    if (!member_id) return res.status(400).json({ error: 'Member ID is required.' });
+
+    const { data: member, error: fetchError } = await supabase.from('members').select('*').eq('member_id', member_id).maybeSingle();
+    if (fetchError) throw fetchError;
+    if (!member) return res.status(404).json({ error: `Member ${member_id} not found.` });
+
+    const { startISO, endISO } = getLocalDateRange();
+    const { data: alreadyCheckedIn } = await supabase
+      .from('check_in_logs')
+      .select('id')
+      .eq('member_id', member.member_id)
+      .gte('checked_in_at', startISO)
+      .lte('checked_in_at', endISO)
+      .maybeSingle();
+
+    if (alreadyCheckedIn) {
+      return res.status(400).json({ error: `Member ${member.name} has already timed in today.` });
+    }
+
+    const currentStatus = calculateStatus(member);
+
+    if (currentStatus === 'Expired') {
+      return res.status(403).json({ error: `Member ${member.name}'s membership has expired.` });
+    }
+
+    if (currentStatus !== member.status) {
+      await supabase.from('members').update({ status: currentStatus }).eq('id', member.id);
+    }
+
+    await supabase.from('check_in_logs').insert({
+      member_id: member.member_id,
+      member_name: member.name,
+      plan: member.plan,
+      status: currentStatus,
+      checked_in_at: new Date().toISOString(),
+    });
+
+    res.status(201).json({ memberName: member.name, status: currentStatus });
+  } catch (err) {
+    console.error('Checkin error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Payment transactions ─────────────────────────────────
+app.get('/api/payments', authMiddleware, async (req, res) => {
+  try {
+    const queryDate = req.query.date;
+    if (!queryDate) return res.status(400).json({ error: 'date query param is required (YYYY-MM-DD)' });
+
+    const { data: members } = await supabase.from('members').select('*');
+    const payments = [];
+
+    if (members) {
+      for (const m of members) {
+        if (!m.joined_date) continue;
+        const { category, period, type } = parsePlan(m.plan);
+        const rate = lookupRate(category, type);
+        if (!rate) continue;
+
+        const joinedDate = m.joined_date.split('T')[0];
+        let amount = 0;
+
+        if (joinedDate === queryDate) {
+          if (period === 'Daily') amount += rate.daily;
+          else if (period === 'Monthly') amount += rate.monthly;
+          else if (period === 'Semi-Monthly') amount += rate.semi;
+          if (!m.plan.includes('Non-Member')) amount += 300;
+        } else if (period === 'Semi-Monthly') {
+          const joinD = new Date(joinedDate);
+          for (let i = 1; i <= 48; i++) {
+            const nextPay = new Date(joinD);
+            nextPay.setDate(nextPay.getDate() + i * 15);
+            const payStr = nextPay.toISOString().split('T')[0];
+            if (payStr > queryDate) break;
+            if (payStr === queryDate) { amount += rate.semi; break; }
+          }
+        }
+
+        if (amount > 0) {
+          payments.push({
+            member_id: m.member_id,
+            name: m.name,
+            plan: m.plan,
+            period,
+            amount,
+          });
+        }
+      }
+    }
+
+    payments.sort((a, b) => b.amount - a.amount);
+    res.json(payments);
+  } catch (err) {
+    console.error('Payments error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Settings ───────────────────────────────────────────────
+app.get('/api/settings', authMiddleware, async (_req, res) => {
+  try {
+    const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '' });
+    res.json({
+      gymName: settings.gym_name,
+      contact: settings.contact,
+      address: settings.address,
+      announcement: settings.announcement,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch settings.' });
+  }
+});
+
+app.put('/api/settings', authMiddleware, async (req, res) => {
+  try {
+    const { gymName, contact, address, announcement } = req.body;
+    const { error } = await supabase.from('settings').update({
+      gym_name: gymName || '',
+      contact: contact || '',
+      address: address || '',
+      announcement: announcement || '',
+    }).eq('id', 1);
+    if (error) throw error;
+    res.json({ message: 'Settings saved.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save settings.' });
+  }
+});
+
+// ─── Revenue ─────────────────────────────────────────────
+const { Document: DocxDocument, Packer: DocxPacker, Paragraph: DocxParagraph, Table: DocxTable, TableRow: DocxTableRow, TableCell: DocxTableCell, TextRun: DocxTextRun, WidthType: DocxWidthType, AlignmentType: DocxAlignmentType, BorderStyle: DocxBorderStyle, HeadingLevel: DocxHeadingLevel } = require('docx');
+
+app.get('/api/revenue', authMiddleware, async (req, res) => {
+  try {
+    const now = new Date();
+    const year = parseInt(req.query.year) || now.getFullYear();
+    const month = parseInt(req.query.month) || (now.getMonth() + 1);
+    const data = await computeRevenueForDateRange(year, month);
+
+    let yearTotal = 0;
+    for (let m = 1; m <= 12; m++) {
+      if (m === month) {
+        yearTotal += data.thisMonthRevenue;
+      } else {
+        const md = await computeRevenueForDateRange(year, m);
+        yearTotal += md.thisMonthRevenue;
+      }
+    }
+    data.thisYearRevenue = yearTotal;
+
+    res.json(data);
+  } catch (err) {
+    console.error('Revenue error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/revenue/export', authMiddleware, async (req, res) => {
@@ -1034,14 +887,14 @@ app.get('/api/revenue/export', authMiddleware, async (req, res) => {
     const now = new Date();
     const year = parseInt(req.query.year) || now.getFullYear();
     const month = parseInt(req.query.month) || (now.getMonth() + 1);
-    const data = computeRevenueForDateRange(db, year, month);
+    const data = await computeRevenueForDateRange(year, month);
 
     let yearTotal = 0;
     for (let m = 1; m <= 12; m++) {
       if (m === month) {
         yearTotal += data.thisMonthRevenue;
       } else {
-        const md = computeRevenueForDateRange(db, year, m);
+        const md = await computeRevenueForDateRange(year, m);
         yearTotal += md.thisMonthRevenue;
       }
     }
@@ -1052,7 +905,6 @@ app.get('/api/revenue/export', authMiddleware, async (req, res) => {
 
     const currency = (n) => `₱${n.toLocaleString()}`;
 
-    // Helper: create a single table cell
     const cell = (text, opts = {}) => {
       const runs = [new DocxTextRun({ text: String(text), bold: opts.bold, size: opts.size || 20 })];
       return new DocxTableCell({
@@ -1104,7 +956,6 @@ app.get('/api/revenue/export', authMiddleware, async (req, res) => {
           }),
           new DocxParagraph({ children: [new DocxTextRun({ text: '' })] }),
 
-          // Summary Section
           new DocxParagraph({
             children: [new DocxTextRun({ text: 'Summary', bold: true, size: 26 })],
             heading: DocxHeadingLevel.HEADING_2,
@@ -1114,7 +965,6 @@ app.get('/api/revenue/export', authMiddleware, async (req, res) => {
           new DocxParagraph({ children: [new DocxTextRun({ text: `Year-to-Date Revenue: ${currency(data.thisYearRevenue)}`, size: 22 })] }),
           new DocxParagraph({ children: [new DocxTextRun({ text: '' })] }),
 
-          // Daily Breakdown Table
           new DocxParagraph({
             children: [new DocxTextRun({ text: 'Daily Revenue Breakdown', bold: true, size: 26 })],
             heading: DocxHeadingLevel.HEADING_2,
@@ -1137,10 +987,36 @@ app.get('/api/revenue/export', authMiddleware, async (req, res) => {
 });
 
 // ─── Start Server ───────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`NeoFit API server running on http://localhost:${PORT}`);
-  console.log(`Database: ${dbPath}`);
+async function init() {
+  const { error: userCheckError } = await supabase.from('users').select('id').limit(1).maybeSingle();
+  if (userCheckError) {
+    console.error('Supabase tables not found. Please run server/supabase-schema.sql in the Supabase SQL Editor first.');
+    console.error('Error:', userCheckError.message);
+    process.exit(1);
+  }
+
+  const { data: existingUser } = await supabase.from('users').select('id').limit(1).maybeSingle();
+  if (!existingUser) {
+    const hashedPassword = bcrypt.hashSync('admin123', 10);
+    const { error } = await supabase.from('users').insert({ email: 'admin@neofit.com', password: hashedPassword, role: 'admin' });
+    if (!error) console.log('Default admin created: admin@neofit.com / admin123');
+  }
+
+  const { data: existingSettings } = await supabase.from('settings').select('id').eq('id', 1).maybeSingle();
+  if (!existingSettings) {
+    await supabase.from('settings').insert({ id: 1, gym_name: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '' });
+  }
+
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`NeoFit API server running on http://localhost:${PORT}`);
+    console.log('Connected to Supabase');
+  });
+}
+
+init().catch(err => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
 });
 
 module.exports = app;

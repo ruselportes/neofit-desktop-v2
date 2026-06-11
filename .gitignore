@@ -5,8 +5,14 @@ node_modules/
 dist/
 release/
 
+# Environment
+.env
+
 # Database (user data, not source)
 *.db
+
+# Phone gateway app (separate branch)
+sms-gateway-app/
 
 # Logs
 *.log
