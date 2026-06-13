@@ -1,32 +1,121 @@
 :root {
-  --bg-primary: #0a0a0c;
-  --bg-secondary: rgba(255, 255, 255, 0.03);
-  --bg-modal: #1a1a1f;
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --accent: #ff5722; /* Neon Orange */
-  --accent-glow: rgba(255, 87, 34, 0.3);
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --success: #10b981;
-  --danger: #ef4444;
-  --card-radius: 16px;
+  --card: #ffffff;
+  --ring: #d4d4d8;
+  --input: #d4d4d8;
+  --muted: #f4f4f5;
+  --accent: #f4f4f5;
+  --border: #e4e4e7;
+  --radius: 0.625rem;
+  --chart-1: #ea580c;
+  --chart-2: #0d9488;
+  --chart-3: #164e63;
+  --chart-4: #fbbf24;
+  --chart-5: #f59e0b;
+  --popover: #ffffff;
+  --primary: #18181b;
+  --sidebar: #fafafa;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --secondary: #f4f4f5;
+  --background: #ffffff;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --foreground: #0a0a0a;
+  --destructive: #ef4444;
+  --sidebar-ring: #d4d4d8;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-border: #e4e4e7;
+  --card-foreground: #0a0a0a;
+  --sidebar-primary: #18181b;
+  --muted-foreground: #71717a;
+  --accent-foreground: #18181b;
+  --popover-foreground: #0a0a0a;
+  --primary-foreground: #fafafa;
+  --sidebar-foreground: #0a0a0a;
+  --secondary-foreground: #18181b;
+  --destructive-foreground: #ef4444;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-primary-foreground: #fafafa;
+
+  /* Backward-compatible aliases */
+  --bg-primary: var(--background);
+  --bg-secondary: var(--muted);
+  --bg-modal: var(--card);
+  --glass-border: var(--border);
+  --brand-accent: #ea580c;
+  --accent-glow: rgba(234, 88, 12, 0.2);
+  --text-main: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --success: var(--chart-2);
+  --danger: var(--destructive);
+  --card-radius: var(--radius);
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --input-bg: rgba(0, 0, 0, 0.2);
-  --th-bg: rgba(0, 0, 0, 0.2);
-  --glass-bg: rgba(255, 255, 255, 0.02);
+  --input-bg: var(--input);
+  --th-bg: var(--muted);
+  --glass-bg: var(--muted);
+  --bg-card: var(--card);
+  --text-secondary: var(--muted-foreground);
+  --text-primary: var(--foreground);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 }
 
-.light-mode {
-  --bg-primary: #f8fafc;
-  --bg-secondary: rgba(0, 0, 0, 0.03);
-  --bg-modal: #ffffff;
-  --glass-border: rgba(0, 0, 0, 0.08);
-  --text-main: #0f172a;
-  --text-muted: #475569;
-  --accent-glow: rgba(255, 87, 34, 0.15);
-  --input-bg: rgba(0, 0, 0, 0.05);
-  --th-bg: rgba(0, 0, 0, 0.05);
-  --glass-bg: rgba(0, 0, 0, 0.02);
+.dark {
+  --card: #0a0a0a;
+  --ring: #52525b;
+  --input: #27272a;
+  --muted: #18181b;
+  --accent: #18181b;
+  --border: #27272a;
+  --radius: 0.625rem;
+  --chart-1: #1d4ed8;
+  --chart-2: #10b981;
+  --chart-3: #f59e0b;
+  --chart-4: #8b5cf6;
+  --chart-5: #f43f5e;
+  --popover: #0a0a0a;
+  --primary: #fafafa;
+  --sidebar: #171717;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --secondary: #27272a;
+  --background: #0a0a0a;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --foreground: #fafafa;
+  --destructive: #7f1d1d;
+  --sidebar-ring: #52525b;
+  --sidebar-accent: #262626;
+  --sidebar-border: #27272a;
+  --card-foreground: #fafafa;
+  --sidebar-primary: #1d4ed8;
+  --muted-foreground: #a1a1aa;
+  --accent-foreground: #fafafa;
+  --popover-foreground: #fafafa;
+  --primary-foreground: #18181b;
+  --sidebar-foreground: #fafafa;
+  --secondary-foreground: #fafafa;
+  --destructive-foreground: #ef4444;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-primary-foreground: #fafafa;
+
+  /* Backward-compatible aliases */
+  --bg-primary: var(--background);
+  --bg-secondary: var(--muted);
+  --bg-modal: var(--card);
+  --glass-border: var(--border);
+  --brand-accent: #1d4ed8;
+  --accent-glow: rgba(29, 78, 216, 0.2);
+  --text-main: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --success: var(--chart-2);
+  --danger: var(--destructive);
+  --card-radius: var(--radius);
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --input-bg: var(--input);
+  --th-bg: var(--muted);
+  --glass-bg: var(--muted);
+  --bg-card: var(--card);
+  --text-secondary: var(--muted-foreground);
+  --text-primary: var(--foreground);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 * {
@@ -42,7 +131,7 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   background-image: 
-    radial-gradient(circle at 15% 50%, rgba(255, 87, 34, 0.05), transparent 25%),
+    radial-gradient(circle at 15% 50%, color-mix(in srgb, var(--brand-accent) 5%, transparent), transparent 25%),
     radial-gradient(circle at 85% 30%, rgba(0, 229, 255, 0.05), transparent 25%);
 }
 
@@ -99,7 +188,7 @@ button {
 
 .sidebar-resize-handle:hover,
 .sidebar-resize-handle:active {
-  background-color: var(--accent);
+  background-color: var(--brand-accent);
 }
 
 .sidebar.collapsed {
@@ -131,7 +220,7 @@ button {
 }
 
 .brand-accent {
-  color: var(--accent);
+  color: var(--brand-accent);
 }
 
 .sidebar.collapsed .brand h1,
@@ -175,8 +264,8 @@ button {
 }
 
 .nav-item.active {
-  background: rgba(255, 87, 34, 0.12);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  color: var(--brand-accent);
   font-weight: 600;
 }
 
@@ -264,7 +353,7 @@ button {
 }
 
 .header-actions .btn-primary {
-  background: var(--accent);
+  background: var(--brand-accent);
   color: white;
   padding: 0.75rem 1.5rem;
   border-radius: 8px;
@@ -312,7 +401,7 @@ button {
   left: 0;
   width: 100%;
   height: 4px;
-  background: var(--accent);
+  background: var(--brand-accent);
   opacity: 0;
   transition: var(--transition);
 }
@@ -439,7 +528,7 @@ button {
 }
 
 .alert-tab-btn.active {
-  background: var(--accent);
+  background: var(--brand-accent);
   color: #ffffff;
   box-shadow: 0 2px 8px var(--accent-glow);
 }
@@ -532,8 +621,8 @@ tr:hover td {
 
 .input-field:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(255, 87, 34, 0.2);
+  border-color: var(--brand-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-accent) 20%, transparent);
 }
 
 select.input-field option {
@@ -572,11 +661,11 @@ select.input-field optgroup {
 }
 
 .scanner-box {
-  border: 2px dashed rgba(255, 87, 34, 0.5);
+  border: 2px dashed color-mix(in srgb, var(--brand-accent) 50%, transparent);
   border-radius: var(--card-radius);
   padding: 4rem;
   text-align: center;
-  background: rgba(255, 87, 34, 0.05);
+  background: color-mix(in srgb, var(--brand-accent) 5%, transparent);
   margin-bottom: 2rem;
 }
 
@@ -588,7 +677,7 @@ select.input-field optgroup {
 
 .btn-text {
   background: none;
-  color: var(--accent);
+  color: var(--brand-accent);
   font-weight: 600;
   cursor: pointer;
 }
@@ -636,7 +725,7 @@ select.input-field optgroup {
 
 /* Buttons */
 .btn-primary {
-  background: var(--accent);
+  background: var(--brand-accent);
   color: white;
   padding: 0.75rem 1.5rem;
   border-radius: 8px;
@@ -915,7 +1004,7 @@ select.input-field optgroup {
 }
 
 .segment-btn.active {
-  background: var(--accent);
+  background: var(--brand-accent);
   color: #fff;
   box-shadow: 0 2px 8px var(--accent-glow);
 }
@@ -960,9 +1049,9 @@ select.input-field optgroup {
 }
 
 .calendar-nav-btn:hover {
-  background: rgba(255, 87, 34, 0.15);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--brand-accent) 15%, transparent);
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
 }
 
 .calendar-weekdays {
@@ -1013,18 +1102,18 @@ select.input-field optgroup {
 }
 
 .calendar-day.checked-in {
-  border-color: rgba(255, 87, 34, 0.4);
-  background: rgba(255, 87, 34, 0.08);
+  border-color: color-mix(in srgb, var(--brand-accent) 40%, transparent);
+  background: color-mix(in srgb, var(--brand-accent) 8%, transparent);
 }
 
 .calendar-day.checked-in .day-number {
-  color: var(--accent);
+  color: var(--brand-accent);
   font-weight: 600;
 }
 
 .calendar-day.selected {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
+  background: var(--brand-accent) !important;
+  border-color: var(--brand-accent) !important;
   color: #fff !important;
   box-shadow: 0 4px 12px var(--accent-glow);
 }
@@ -1034,14 +1123,14 @@ select.input-field optgroup {
 }
 
 .calendar-day.has-revenue {
-  border-color: rgba(255, 87, 34, 0.3);
-  background: rgba(255, 87, 34, 0.06);
+  border-color: color-mix(in srgb, var(--brand-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--brand-accent) 6%, transparent);
 }
 
 .calendar-day .day-amount {
   font-size: 0.6rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--brand-accent);
   margin-top: 1px;
   line-height: 1;
   white-space: nowrap;
@@ -1065,7 +1154,7 @@ select.input-field optgroup {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background-color: var(--accent);
+  background-color: var(--brand-accent);
 }
 
 .calendar-detail-card {
@@ -1075,8 +1164,8 @@ select.input-field optgroup {
 }
 
 .calendar-detail-card.has-data {
-  background: rgba(255, 87, 34, 0.06);
-  border: 1px solid rgba(255, 87, 34, 0.2);
+  background: color-mix(in srgb, var(--brand-accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 20%, transparent);
 }
 
 .calendar-detail-card.no-data {
@@ -1189,8 +1278,8 @@ select.input-field optgroup {
 }
 
 .settings-icon {
-  background: rgba(255, 87, 34, 0.1);
-  border: 1px solid rgba(255, 87, 34, 0.2);
+  background: color-mix(in srgb, var(--brand-accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 20%, transparent);
   border-radius: 50%;
   width: 80px;
   height: 80px;
@@ -1198,7 +1287,7 @@ select.input-field optgroup {
   align-items: center;
   justify-content: center;
   margin-bottom: 1.5rem;
-  color: var(--accent);
+  color: var(--brand-accent);
   font-size: 2.5rem;
   animation: pulse 2s infinite;
 }
@@ -1235,8 +1324,8 @@ select.input-field optgroup {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 2px solid var(--accent);
-  background: var(--accent);
+  border: 2px solid var(--brand-accent);
+  background: var(--brand-accent);
   color: #fff;
   font-size: 0.8rem;
   font-weight: 700;
@@ -1383,8 +1472,8 @@ select.input-field optgroup {
 .rev-loading-spinner {
   width: 28px;
   height: 28px;
-  border: 3px solid rgba(255,87,34,0.15);
-  border-top-color: var(--accent);
+  border: 3px solid color-mix(in srgb, var(--brand-accent) 15%, transparent);
+  border-top-color: var(--brand-accent);
   border-radius: 50%;
   animation: revSpin 0.7s linear infinite;
 }
@@ -1508,8 +1597,8 @@ select.input-field optgroup {
 }
 
 .rev-month-btn:hover {
-  background: rgba(255,87,34,0.12);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  color: var(--brand-accent);
 }
 
 .rev-month-label {
@@ -1542,7 +1631,7 @@ select.input-field optgroup {
 }
 
 .rev-year-input:focus {
-  border-color: var(--accent);
+  border-color: var(--brand-accent);
 }
 
 /* ─── Pill Filters ─────────────────────────────────────────── */
@@ -1575,10 +1664,10 @@ select.input-field optgroup {
 }
 
 .rev-pill.active {
-  background: var(--accent);
+  background: var(--brand-accent);
   color: #fff;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(255,87,34,0.3);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--brand-accent) 30%, transparent);
 }
 
 /* ─── Chart ────────────────────────────────────────────────── */
@@ -1602,8 +1691,8 @@ select.input-field optgroup {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px rgba(255,87,34,0.6);
+  background: var(--brand-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--brand-accent) 60%, transparent);
 }
 
 .rev-peak-label {
@@ -1661,7 +1750,7 @@ select.input-field optgroup {
   margin-top: 0.75rem;
   padding: 1rem;
   background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,87,34,0.15);
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 15%, transparent);
   border-radius: 12px;
   animation: revFadeIn 0.2s ease;
 }
@@ -1672,7 +1761,7 @@ select.input-field optgroup {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  color: var(--accent);
+  color: var(--brand-accent);
   font-weight: 600;
   margin-bottom: 0.75rem;
 }
@@ -1845,7 +1934,7 @@ select.input-field optgroup {
 .rev-category-rev {
   font-size: 0.9rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--brand-accent);
 }
 
 .rev-empty-categories {
@@ -1879,7 +1968,7 @@ select.input-field optgroup {
 }
 
 .rev-split-ci {
-  background: linear-gradient(135deg, #ff5722, #ff8a50);
+  background: linear-gradient(135deg, var(--brand-accent), color-mix(in srgb, var(--brand-accent) 70%, white));
 }
 
 .rev-split-py {
@@ -1921,7 +2010,7 @@ select.input-field optgroup {
   flex-shrink: 0;
 }
 
-.rev-dot-ci { background: #ff5722; }
+.rev-dot-ci { background: var(--brand-accent); }
 .rev-dot-py { background: #10b981; }
 
 .rev-breakdown-label {
