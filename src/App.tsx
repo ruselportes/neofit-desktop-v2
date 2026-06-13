@@ -112,7 +112,7 @@ function App() {
   }, [token]);
 
   useEffect(() => {
-    document.body.className = theme === 'light' ? 'light-mode' : '';
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
     // Tell Electron main process to switch native title bar theme
     const api = (window as unknown as { electronAPI?: { setNativeTheme?: (theme: string) => void } }).electronAPI;
@@ -161,11 +161,11 @@ function App() {
         </button>
         <div className="brand" style={{ marginBottom: 0 }}>
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="6" y="11" width="12" height="2" fill="#ff5722" />
-            <rect x="3" y="7" width="3" height="10" rx="1" fill="#ff5722" />
-            <rect x="18" y="7" width="3" height="10" rx="1" fill="#ff5722" />
-            <rect x="1" y="9" width="2" height="6" rx="0.5" fill="#ff5722" opacity="0.7"/>
-            <rect x="21" y="9" width="2" height="6" rx="0.5" fill="#ff5722" opacity="0.7"/>
+            <rect x="6" y="11" width="12" height="2" fill="var(--brand-accent)" />
+            <rect x="3" y="7" width="3" height="10" rx="1" fill="var(--brand-accent)" />
+            <rect x="18" y="7" width="3" height="10" rx="1" fill="var(--brand-accent)" />
+            <rect x="1" y="9" width="2" height="6" rx="0.5" fill="var(--brand-accent)" opacity="0.7"/>
+            <rect x="21" y="9" width="2" height="6" rx="0.5" fill="var(--brand-accent)" opacity="0.7"/>
           </svg>
           <h1 style={{ fontSize: '1.25rem' }}>NEO<span className="brand-accent">FIT</span></h1>
         </div>
@@ -185,11 +185,11 @@ function App() {
         <div className="sidebar-header">
           <div className="brand" onClick={toggleSidebarCollapse} style={{ cursor: 'pointer' }} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="6" y="11" width="12" height="2" fill="#ff5722" />
-              <rect x="3" y="7" width="3" height="10" rx="1" fill="#ff5722" />
-              <rect x="18" y="7" width="3" height="10" rx="1" fill="#ff5722" />
-              <rect x="1" y="9" width="2" height="6" rx="0.5" fill="#ff5722" opacity="0.7"/>
-              <rect x="21" y="9" width="2" height="6" rx="0.5" fill="#ff5722" opacity="0.7"/>
+              <rect x="6" y="11" width="12" height="2" fill="var(--brand-accent)" />
+              <rect x="3" y="7" width="3" height="10" rx="1" fill="var(--brand-accent)" />
+              <rect x="18" y="7" width="3" height="10" rx="1" fill="var(--brand-accent)" />
+              <rect x="1" y="9" width="2" height="6" rx="0.5" fill="var(--brand-accent)" opacity="0.7"/>
+              <rect x="21" y="9" width="2" height="6" rx="0.5" fill="var(--brand-accent)" opacity="0.7"/>
             </svg>
             <h1>NEO<span className="brand-accent">FIT</span></h1>
           </div>
