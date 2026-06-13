@@ -826,12 +826,14 @@ app.get('/api/payments', authMiddleware, async (req, res) => {
 app.get('/api/settings', authMiddleware, async (_req, res) => {
   try {
     const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
-    if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '' });
+    if (!settings) return res.json({ gymName: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '', phoneAppEnabled: false, notifyDaysBefore: 3 });
     res.json({
       gymName: settings.gym_name,
       contact: settings.contact,
       address: settings.address,
       announcement: settings.announcement,
+      phoneAppEnabled: settings.phone_app_enabled === true,
+      notifyDaysBefore: settings.notify_days_before || 3,
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch settings.' });
@@ -840,17 +842,130 @@ app.get('/api/settings', authMiddleware, async (_req, res) => {
 
 app.put('/api/settings', authMiddleware, async (req, res) => {
   try {
-    const { gymName, contact, address, announcement } = req.body;
+    const { gymName, contact, address, announcement, phoneAppEnabled, notifyDaysBefore } = req.body;
     const { error } = await supabase.from('settings').update({
       gym_name: gymName || '',
       contact: contact || '',
       address: address || '',
       announcement: announcement || '',
+      phone_app_enabled: phoneAppEnabled === true,
+      notify_days_before: notifyDaysBefore || 3,
     }).eq('id', 1);
     if (error) throw error;
     res.json({ message: 'Settings saved.' });
   } catch (err) {
     res.status(500).json({ error: 'Failed to save settings.' });
+  }
+});
+
+// ─── SMS / Phone App Transport (Supabase Queue) ────────────
+async function enqueueSms(recipient, message, memberName) {
+  const { error } = await supabase.from('sms_queue').insert({
+    recipient,
+    message,
+    member_name: memberName || '',
+    status: 'pending',
+  });
+  if (error) throw error;
+}
+
+async function sendExpiryNotifications() {
+  const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
+  if (!settings || !settings.phone_app_enabled) return 0;
+
+  const today = new Date().toISOString().split('T')[0];
+  const days = settings.notify_days_before || 3;
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + days);
+  const targetStr = targetDate.toISOString().split('T')[0];
+
+  const { data: members } = await supabase
+    .from('members')
+    .select('*')
+    .or(`expiry_date.eq.${targetStr},membership_expiry.eq.${targetStr}`)
+    .or(`last_sms_sent.is.null,last_sms_sent.neq.${today}`);
+
+  let queued = 0;
+  if (members) {
+    for (const m of members) {
+      const msg = `Hi ${m.name}, your plan expires in ${days} day(s). Please renew. - NeoFit Fitness`;
+      await enqueueSms(m.contact, msg, m.name);
+      await supabase.from('members').update({ last_sms_sent: today }).eq('id', m.id);
+      queued++;
+    }
+  }
+  await supabase.from('settings').update({ last_notification_run: today }).eq('id', 1);
+  return queued;
+}
+
+// ─── SMS Notifications Routes ───────────────────────────────
+app.post('/api/sms/test', authMiddleware, async (req, res) => {
+  try {
+    const { to, message } = req.body;
+    if (!to || !message) return res.status(400).json({ error: 'Recipient number and message are required.' });
+    const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (!settings || !settings.phone_app_enabled) return res.status(400).json({ error: 'Phone app is not enabled. Save settings first.' });
+    await enqueueSms(to, message, 'Test');
+    res.json({ message: 'Test SMS queued successfully.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/notify/run', authMiddleware, async (_req, res) => {
+  try {
+    const count = await sendExpiryNotifications();
+    res.json({ message: `Notification queued for ${count} member(s).` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Daily SMS Scheduler ────────────────────────────────────
+function startSmsScheduler() {
+  const checkAndRun = async () => {
+    const { data: settings } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (!settings || !settings.phone_app_enabled) return;
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    if (now.getHours() === 8 && settings.last_notification_run !== today) {
+      try {
+        const count = await sendExpiryNotifications();
+        if (count > 0) console.log(`SMS scheduler: queued ${count} notification(s)`);
+      } catch (e) {
+        console.error('SMS scheduler error:', e.message);
+      }
+    }
+  };
+  checkAndRun();
+  setInterval(checkAndRun, 60 * 60 * 1000);
+}
+
+// ─── SMS Queue Polling (for phone app to pick up) ──────────
+app.get('/api/sms/pending', authMiddleware, async (_req, res) => {
+  try {
+    const { data: pending } = await supabase
+      .from('sms_queue')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(10);
+    res.json(pending || []);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/sms/ack', authMiddleware, async (req, res) => {
+  try {
+    const { id, status, error: smsError } = req.body;
+    if (!id || !status) return res.status(400).json({ error: 'id and status are required.' });
+    const update = { status, sent_at: status === 'sent' ? new Date().toISOString() : null };
+    if (smsError) update.error = smsError;
+    await supabase.from('sms_queue').update(update).eq('id', id);
+    res.json({ message: 'Acknowledged.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -1006,6 +1121,8 @@ async function init() {
   if (!existingSettings) {
     await supabase.from('settings').insert({ id: 1, gym_name: 'NeoFit Fitness Gym', contact: '', address: '', announcement: '' });
   }
+
+  startSmsScheduler();
 
   const PORT = process.env.PORT || 3001;
   app.listen(PORT, () => {

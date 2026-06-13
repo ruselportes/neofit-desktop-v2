@@ -44,4 +44,6 @@ export interface GymSettings {
   contact: string;
   address: string;
   announcement: string;
+  phoneAppEnabled: boolean;
+  notifyDaysBefore: number;
 }

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS members (
   expiry_date DATE,
   address TEXT DEFAULT '',
   membership_expiry DATE,
+  last_sms_sent DATE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -37,12 +38,26 @@ CREATE TABLE IF NOT EXISTS settings (
   gym_name TEXT NOT NULL DEFAULT 'NeoFit Fitness Gym',
   contact TEXT NOT NULL DEFAULT '',
   address TEXT NOT NULL DEFAULT '',
-  announcement TEXT NOT NULL DEFAULT ''
+  announcement TEXT NOT NULL DEFAULT '',
+  phone_app_enabled BOOLEAN NOT NULL DEFAULT false,
+  notify_days_before INT NOT NULL DEFAULT 3,
+  last_notification_run DATE
+);
+
+CREATE TABLE IF NOT EXISTS sms_queue (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  recipient TEXT NOT NULL,
+  message TEXT NOT NULL,
+  member_name TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  sent_at TIMESTAMPTZ
 );
 
 -- Seed default settings
-INSERT INTO settings (id, gym_name, contact, address, announcement)
-VALUES (1, 'NeoFit Fitness Gym', '', '', '')
+INSERT INTO settings (id, gym_name, contact, address, announcement, phone_app_enabled, notify_days_before)
+VALUES (1, 'NeoFit Fitness Gym', '', '', '', false, 3)
 ON CONFLICT (id) DO NOTHING;
 
 -- Note: Default admin user (admin@neofit.com / admin123) is auto-seeded by the server on first startup.

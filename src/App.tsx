@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, Users, Monitor, DollarSign, TrendingUp, Sun, Moon, LogOut } from 'lucide-react';
+import { Home, Users, Monitor, DollarSign, TrendingUp, Sun, Moon, LogOut, Settings } from 'lucide-react';
 import './index.css';
 
 // Import Views
@@ -9,6 +9,7 @@ import AttendanceView from './views/AttendanceView.tsx';
 
 import RatesView from './views/RatesView.tsx';
 import RevenueView from './views/RevenueView.tsx';
+import SettingsView from './views/SettingsView.tsx';
 import LoginView from './views/LoginView.tsx';
 import AccountModal from './views/AccountModal.tsx';
 import * as api from './api';
@@ -141,6 +142,7 @@ function App() {
       case 'attendance': return <AttendanceView showNotification={showNotification} />;
       case 'rates': return <RatesView />;
       case 'revenue': return <RevenueView />;
+      case 'settings': return <SettingsView showNotification={showNotification} />;
       default: return <DashboardView onNavigate={setActiveTab} role={role} />;
     }
   };
@@ -202,13 +204,14 @@ function App() {
           </button>
         </div>
         <ul className="nav-links">
-          {(['dashboard', 'members', 'attendance', 'rates', 'revenue'] as const).map(tab => {
+          {(['dashboard', 'members', 'attendance', 'rates', 'revenue', 'settings'] as const).map(tab => {
             const iconMap: Record<string, React.ReactNode> = {
               dashboard: <Home size={18} />,
               members: <Users size={18} />,
               attendance: <Monitor size={18} />,
               rates: <DollarSign size={18} />,
               revenue: <TrendingUp size={18} />,
+              settings: <Settings size={18} />,
             };
             return (
               <li 

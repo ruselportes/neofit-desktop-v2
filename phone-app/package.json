@@ -1,0 +1,14 @@
+{
+  "name": "neofit-phone-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NeoFit SMS bridge for Termux (Android) – polls Supabase for pending SMS",
+  "main": "phone-client.js",
+  "scripts": {
+    "start": "node phone-client.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.3.1"
+  }
+}
