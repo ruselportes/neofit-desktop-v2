@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import * as api from '../api';
 import type { Member } from '../types';
 
@@ -376,7 +376,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                         <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{category}</div>
                         {(period || type) && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            {[period, type].filter(Boolean).join(' · ')}
+                            {[period, type].filter(Boolean).join(' Â· ')}
                           </div>
                         )}
                       </div>
@@ -400,7 +400,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                         )}
                       </div>
                     );
-                  })() : <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>}
+                  })() : <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>â€”</span>}
                 </td>
                 <td>
                   {(() => {
@@ -453,7 +453,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                 const newPlan = e.target.value;
                 setForm({ ...form, plan: newPlan, expiry_date: calcExpiry(newPlan, form.joined_date), membership_expiry: calcMembershipExpiry(newPlan, form.joined_date) });
               }}>
-                <optgroup label="━━ Members (Annual Fee Paid) ━━">
+                <optgroup label="â”â” Members (Annual Fee Paid) â”â”">
                   <option>Regular Member - Monthly (No Treadmill)</option>
                   <option>Regular Member - Monthly (With Treadmill)</option>
                   <option>Regular Member - Semi-Monthly (No Treadmill)</option>
@@ -467,7 +467,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                   <option>Student/Senior Member - Daily (No Treadmill)</option>
                   <option>Student/Senior Member - Daily (With Treadmill)</option>
                 </optgroup>
-                <optgroup label="━━ Non-Members ━━">
+                <optgroup label="â”â” Non-Members â”â”">
                   <option>Regular Non-Member - Monthly (No Treadmill)</option>
                   <option>Regular Non-Member - Monthly (With Treadmill)</option>
                   <option>Regular Non-Member - Semi-Monthly (No Treadmill)</option>
@@ -561,19 +561,19 @@ export default function MembersView({ role, showNotification }: { role: string |
                 <h4 style={{ margin: '0 0 0.75rem 0', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.5px' }}>Actions</h4>
                 <div className="action-buttons-group">
                   <button className="btn-secondary" style={{ flex: 1, fontSize: '0.85rem', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} onClick={() => startRenewPlan(detailsMember)}>
-                    🔄 Renew Plan
+                    ðŸ”„ Renew Plan
                   </button>
                   {!detailsMember.plan.includes('Non-Member') && (
                     <button className="btn-secondary" style={{ flex: 1, fontSize: '0.85rem', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} onClick={() => startRenewMembership(detailsMember)}>
-                      ⭐ Renew Annual
+                      â­ Renew Annual
                     </button>
                   )}
                 </div>
 
                 {/* Renewal Panel */}
                 {renewalType === 'plan' && (
-                  <div style={{ background: 'rgba(255, 87, 34, 0.04)', border: '1px solid rgba(255, 87, 34, 0.2)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
-                    <h5 style={{ margin: '0 0 1rem 0', color: 'var(--accent)', fontWeight: 600, fontSize: '0.95rem' }}>Plan Renewal</h5>
+                  <div style={{ background: 'color-mix(in srgb, var(--brand-accent) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--brand-accent) 20%, transparent)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
+                    <h5 style={{ margin: '0 0 1rem 0', color: 'var(--brand-accent)', fontWeight: 600, fontSize: '0.95rem' }}>Plan Renewal</h5>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem', marginBottom: '1rem' }}>
                       <div className="form-group" style={{ margin: 0 }}>
                         <label>New Plan</label>
@@ -581,7 +581,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                           const p = e.target.value;
                         setRenewalForm({ ...renewalForm, plan: p, expiry_date: calcExpiry(p, renewalForm.start_date), membership_expiry: calcMembershipExpiry(p, renewalForm.start_date) });
                       }}>
-                        <optgroup label="━━ Members (Annual Fee Paid) ━━">
+                        <optgroup label="â”â” Members (Annual Fee Paid) â”â”">
                             <option>Regular Member - Monthly (No Treadmill)</option>
                             <option>Regular Member - Monthly (With Treadmill)</option>
                             <option>Regular Member - Semi-Monthly (No Treadmill)</option>
@@ -595,7 +595,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                             <option>Student/Senior Member - Daily (No Treadmill)</option>
                             <option>Student/Senior Member - Daily (With Treadmill)</option>
                           </optgroup>
-                          <optgroup label="━━ Non-Members ━━">
+                          <optgroup label="â”â” Non-Members â”â”">
                             <option>Regular Non-Member - Monthly (No Treadmill)</option>
                             <option>Regular Non-Member - Monthly (With Treadmill)</option>
                             <option>Regular Non-Member - Semi-Monthly (No Treadmill)</option>
@@ -726,7 +726,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                         <div className={`calendar-detail-card ${selectedCheckIn ? 'has-data' : 'no-data'}`} style={{ marginTop: '1rem' }}>
                           {selectedCheckIn ? (
                             <>
-                              <div style={{ fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--brand-accent)', letterSpacing: '0.5px', marginBottom: '8px' }}>
                                 Checked In on {selectedCalendarDate}
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

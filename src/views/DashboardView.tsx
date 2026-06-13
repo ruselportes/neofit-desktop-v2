@@ -51,7 +51,7 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
       <section className="stats-grid" style={{ marginTop: '1rem' }}>
         <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('revenue')}>
           <div className="stat-title">Today's Revenue</div>
-          <div className="stat-value" style={{ color: 'var(--accent)' }}>{stats ? currency(stats.todayRevenue) : '—'}</div>
+          <div className="stat-value" style={{ color: 'var(--brand-accent)' }}>{stats ? currency(stats.todayRevenue) : '—'}</div>
         </div>
         <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('revenue')}>
           <div className="stat-title">Month Revenue</div>
@@ -114,8 +114,8 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
                   <div key={m.id} className="member-alert-item">
                     <div className="member-alert-info">
                       <strong>{m.name}</strong>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📞 {m.contact}</span>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📋 {m.plan}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ðŸ“ž {m.contact}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ðŸ“‹ {m.plan}</span>
                     </div>
                     <div className="member-alert-meta">
                       <span className="badge expired">{labelToShow}</span>
@@ -138,8 +138,8 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
                   <div key={m.id} className="member-alert-item">
                     <div className="member-alert-info">
                       <strong>{m.name}</strong>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📞 {m.contact}</span>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📋 {m.plan}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ðŸ“ž {m.contact}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ðŸ“‹ {m.plan}</span>
                     </div>
                     <div className="member-alert-meta">
                       <span className="badge expiring-soon">{labelToShow}</span>

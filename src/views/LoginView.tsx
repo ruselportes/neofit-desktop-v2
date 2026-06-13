@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import * as api from '../api';
 
 export default function LoginView({ onLogin }: { onLogin: (token: string, role: string) => void }) {
@@ -28,11 +28,11 @@ export default function LoginView({ onLogin }: { onLogin: (token: string, role: 
       <div className="stat-card" style={{ width: '100%', maxWidth: '400px', padding: '2rem' }}>
         <div className="brand" style={{ justifyContent: 'center', marginBottom: '2rem' }}>
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="6" y="11" width="12" height="2" fill="#ff5722" />
-            <rect x="3" y="7" width="3" height="10" rx="1" fill="#ff5722" />
-            <rect x="18" y="7" width="3" height="10" rx="1" fill="#ff5722" />
-            <rect x="1" y="9" width="2" height="6" rx="0.5" fill="#ff5722" opacity="0.7"/>
-            <rect x="21" y="9" width="2" height="6" rx="0.5" fill="#ff5722" opacity="0.7"/>
+            <rect x="6" y="11" width="12" height="2" fill="var(--brand-accent)" />
+            <rect x="3" y="7" width="3" height="10" rx="1" fill="var(--brand-accent)" />
+            <rect x="18" y="7" width="3" height="10" rx="1" fill="var(--brand-accent)" />
+            <rect x="1" y="9" width="2" height="6" rx="0.5" fill="var(--brand-accent)" opacity="0.7"/>
+            <rect x="21" y="9" width="2" height="6" rx="0.5" fill="var(--brand-accent)" opacity="0.7"/>
           </svg>
           <h1>NEO<span className="brand-accent">FIT</span></h1>
         </div>

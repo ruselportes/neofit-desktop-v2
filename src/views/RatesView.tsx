@@ -1,4 +1,4 @@
-import { rateTable } from '../rates';
+﻿import { rateTable } from '../rates';
 
 export default function RatesView() {
   const rates = rateTable;
@@ -40,7 +40,7 @@ export default function RatesView() {
       <div className="stat-card" style={{ marginTop: '2rem', padding: '1.5rem' }}>
         <h3 className="section-title">Additional Fees</h3>
         <p style={{ fontSize: '1.2rem', color: 'var(--text-primary)' }}>
-          Annual Membership Fee: <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>₱300</span>
+          Annual Membership Fee: <span style={{ color: 'var(--brand-accent)', fontWeight: 'bold' }}>₱300</span>
         </p>
       </div>
     </>

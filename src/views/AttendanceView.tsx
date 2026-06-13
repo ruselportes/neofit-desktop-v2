@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import * as api from '../api';
 import type { CheckIn, Member } from '../types';
 
@@ -140,7 +140,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
     }
 
     if (member) {
-      // Plan expired → block check-in and show renewal modal
+      // Plan expired â†’ block check-in and show renewal modal
       if (member.status === 'Expired') {
         setRenewalMember(member);
         setRenewalError('');
@@ -154,7 +154,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
         return;
       }
 
-      // Membership expired but plan active → non-blocking membership renewal prompt
+      // Membership expired but plan active â†’ non-blocking membership renewal prompt
       const membershipExpired = !!member.membership_expiry &&
         !member.plan.includes('Non-Member') &&
         new Date(member.membership_expiry) < new Date(new Date().toLocaleDateString('sv'));
@@ -208,7 +208,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
           fontSize: '0.9rem',
           fontWeight: 500
         }}>
-          ⚠️ Viewing past logs. Manual check-in is disabled.
+          âš ï¸ Viewing past logs. Manual check-in is disabled.
         </div>
       )}
 
@@ -261,7 +261,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
         <div className="modal-overlay" onClick={() => { setRenewalMember(null); setRenewalType(null); }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, color: '#ff5722' }}>
+              <h3 style={{ margin: 0, color: 'var(--brand-accent)' }}>
                 {renewalMember.status === 'Expired' ? 'Plan Expired' : 'Annual Membership Expired'} - {renewalMember.name}
               </h3>
               <button
@@ -284,8 +284,8 @@ export default function AttendanceView({ showNotification }: { showNotification:
             {renewalError && <div className="toast error" style={{ marginBottom: '1rem' }}>{renewalError}</div>}
 
             {renewalType === 'plan' && (
-              <div style={{ background: 'rgba(255, 87, 34, 0.04)', border: '1px solid rgba(255, 87, 34, 0.2)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
-                <h5 style={{ margin: '0 0 1rem 0', color: 'var(--accent)', fontWeight: 600, fontSize: '0.95rem' }}>Plan Renewal</h5>
+              <div style={{ background: 'color-mix(in srgb, var(--brand-accent) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--brand-accent) 20%, transparent)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
+                <h5 style={{ margin: '0 0 1rem 0', color: 'var(--brand-accent)', fontWeight: 600, fontSize: '0.95rem' }}>Plan Renewal</h5>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem', marginBottom: '1rem' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label>New Plan</label>
@@ -293,7 +293,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
                       const p = e.target.value;
                       setRenewalForm({ ...renewalForm, plan: p, expiry_date: calcExpiry(p, renewalForm.start_date), membership_expiry: calcMembershipExpiry(p, renewalForm.start_date) });
                     }}>
-                      <optgroup label="━━ Members (Annual Fee Paid) ━━">
+                      <optgroup label="â”â” Members (Annual Fee Paid) â”â”">
                         <option>Regular Member - Monthly (No Treadmill)</option>
                         <option>Regular Member - Monthly (With Treadmill)</option>
                         <option>Regular Member - Semi-Monthly (No Treadmill)</option>
@@ -307,7 +307,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
                         <option>Student/Senior Member - Daily (No Treadmill)</option>
                         <option>Student/Senior Member - Daily (With Treadmill)</option>
                       </optgroup>
-                      <optgroup label="━━ Non-Members ━━">
+                      <optgroup label="â”â” Non-Members â”â”">
                         <option>Regular Non-Member - Monthly (No Treadmill)</option>
                         <option>Regular Non-Member - Monthly (With Treadmill)</option>
                         <option>Regular Non-Member - Semi-Monthly (No Treadmill)</option>
