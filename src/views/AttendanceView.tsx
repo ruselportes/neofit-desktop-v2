@@ -261,7 +261,7 @@ export default function AttendanceView({ showNotification }: { showNotification:
         <div className="modal-overlay" onClick={() => { setRenewalMember(null); setRenewalType(null); }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, color: '#ff5722' }}>
+              <h3 style={{ margin: 0, color: 'var(--brand-accent)' }}>
                 {renewalMember.status === 'Expired' ? 'Plan Expired' : 'Annual Membership Expired'} - {renewalMember.name}
               </h3>
               <button
@@ -284,8 +284,8 @@ export default function AttendanceView({ showNotification }: { showNotification:
             {renewalError && <div className="toast error" style={{ marginBottom: '1rem' }}>{renewalError}</div>}
 
             {renewalType === 'plan' && (
-              <div style={{ background: 'rgba(255, 87, 34, 0.04)', border: '1px solid rgba(255, 87, 34, 0.2)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
-                <h5 style={{ margin: '0 0 1rem 0', color: 'var(--accent)', fontWeight: 600, fontSize: '0.95rem' }}>Plan Renewal</h5>
+              <div style={{ background: 'color-mix(in srgb, var(--brand-accent) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--brand-accent) 20%, transparent)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
+                <h5 style={{ margin: '0 0 1rem 0', color: 'var(--brand-accent)', fontWeight: 600, fontSize: '0.95rem' }}>Plan Renewal</h5>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem', marginBottom: '1rem' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label>New Plan</label>

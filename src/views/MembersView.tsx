@@ -572,8 +572,8 @@ export default function MembersView({ role, showNotification }: { role: string |
 
                 {/* Renewal Panel */}
                 {renewalType === 'plan' && (
-                  <div style={{ background: 'rgba(255, 87, 34, 0.04)', border: '1px solid rgba(255, 87, 34, 0.2)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
-                    <h5 style={{ margin: '0 0 1rem 0', color: 'var(--accent)', fontWeight: 600, fontSize: '0.95rem' }}>Plan Renewal</h5>
+                  <div style={{ background: 'color-mix(in srgb, var(--brand-accent) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--brand-accent) 20%, transparent)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem' }}>
+                    <h5 style={{ margin: '0 0 1rem 0', color: 'var(--brand-accent)', fontWeight: 600, fontSize: '0.95rem' }}>Plan Renewal</h5>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.8rem', marginBottom: '1rem' }}>
                       <div className="form-group" style={{ margin: 0 }}>
                         <label>New Plan</label>
@@ -726,7 +726,7 @@ export default function MembersView({ role, showNotification }: { role: string |
                         <div className={`calendar-detail-card ${selectedCheckIn ? 'has-data' : 'no-data'}`} style={{ marginTop: '1rem' }}>
                           {selectedCheckIn ? (
                             <>
-                              <div style={{ fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--accent)', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--brand-accent)', letterSpacing: '0.5px', marginBottom: '8px' }}>
                                 Checked In on {selectedCalendarDate}
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
