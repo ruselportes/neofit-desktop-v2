@@ -51,7 +51,7 @@ export default function DashboardView({ onNavigate, role }: { onNavigate: (tab: 
       <section className="stats-grid" style={{ marginTop: '1rem' }}>
         <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('revenue')}>
           <div className="stat-title">Today's Revenue</div>
-          <div className="stat-value" style={{ color: 'var(--accent)' }}>{stats ? currency(stats.todayRevenue) : '—'}</div>
+          <div className="stat-value" style={{ color: 'var(--brand-accent)' }}>{stats ? currency(stats.todayRevenue) : '—'}</div>
         </div>
         <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('revenue')}>
           <div className="stat-title">Month Revenue</div>
