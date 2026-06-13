@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "NeoFit SMS",
+    "slug": "neofit-sms",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "neofit-sms",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0a0a0a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.neofit.sms"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a0a"
+      },
+      "package": "com.neofit.sms",
+      "permissions": [
+        "android.permission.RECEIVE_SMS",
+        "android.permission.SEND_SMS",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECIEVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-updates",
+        {
+          "username": "neofit"
+        }
+      ],
+      [
+        "expo-background-fetch"
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#ea580c"
+        }
+      ],
+      "./modules/sms-module"
+    ],
+    "updates": {
+      "url": "https://u.expo.dev/neofit-sms",
+      "enabled": true,
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "neofit-sms"
+      }
+    }
+  }
+}

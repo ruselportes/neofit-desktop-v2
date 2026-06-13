@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS sms_queue (
   member_name TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
   error TEXT,
+  device_id TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   sent_at TIMESTAMPTZ
 );

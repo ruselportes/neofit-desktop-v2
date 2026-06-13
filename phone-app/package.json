@@ -1,14 +1,38 @@
 {
-  "name": "neofit-phone-app",
+  "name": "neofit-sms-app",
   "version": "1.0.0",
-  "private": true,
-  "description": "NeoFit SMS bridge for Termux (Android) – polls Supabase for pending SMS",
-  "main": "phone-client.js",
+  "main": "expo-router/entry",
   "scripts": {
-    "start": "node phone-client.js"
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
   },
   "dependencies": {
+    "expo": "~56.0.0",
+    "expo-router": "~4.0.0",
+    "expo-status-bar": "~2.2.0",
+    "expo-constants": "~17.0.8",
+    "expo-linking": "~7.0.5",
+    "expo-background-fetch": "~14.0.0",
+    "expo-task-manager": "~13.0.0",
+    "expo-notifications": "~0.30.0",
+    "expo-updates": "~0.27.0",
+    "expo-device": "~7.1.0",
     "@supabase/supabase-js": "^2.39.0",
-    "dotenv": "^16.3.1"
-  }
+    "@react-native-async-storage/async-storage": "^2.0.0",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
+    "react-native-safe-area-context": "^5.3.0",
+    "react-native-screens": "~4.10.0",
+    "@expo/vector-icons": "^14.0.0",
+    "react-native-gesture-handler": "~2.24.0",
+    "react-native-reanimated": "~3.17.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "@types/react": "~18.3.0",
+    "typescript": "~5.3.0"
+  },
+  "private": true
 }
