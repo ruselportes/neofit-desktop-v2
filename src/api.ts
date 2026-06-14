@@ -33,8 +33,6 @@ async function request(url: string, options?: RequestInit) {
 export const login = (email: string, password: string) => 
   request('/login', { method: 'POST', body: JSON.stringify({ email, password }) });
 
-export const logout = () => request('/logout', { method: 'POST' });
-
 export const fetchCurrentUser = () => request('/users/me');
 
 export const changePassword = (currentPassword: string, newPassword: string) =>

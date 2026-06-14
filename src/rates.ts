@@ -4,7 +4,7 @@ const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const MEMBER_ID_PREFIX = 'M-';
 
 export const ANNUAL_MEMBERSHIP_FEE = 300;
-export const EXPIRING_SOON_DAYS = 7;
+const EXPIRING_SOON_DAYS = 7;
 
 export const rateTable: Rate[] = [
   { category: 'Regular Members', type: 'No Treadmill', monthly: 600, semi: 300, daily: 60 },
