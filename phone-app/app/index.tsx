@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, RefreshControl, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { runNow } from '../lib/background';
+import { runNow, sendAllPending } from '../lib/background';
+import { getSendMode, setSendMode, type SendMode } from '../lib/settings';
 import { useFocusEffect } from 'expo-router';
 
 export default function Dashboard() {
@@ -11,6 +12,8 @@ export default function Dashboard() {
   const [failedCount, setFailedCount] = useState(0);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [sendMode, setSendModeState] = useState<SendMode>('auto');
+  const [modeLoaded, setModeLoaded] = useState(false);
 
   const fetchStats = useCallback(async () => {
     const today = new Date().toISOString().split('T')[0];
@@ -29,7 +32,12 @@ export default function Dashboard() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchStats();
+      (async () => {
+        await fetchStats();
+        const mode = await getSendMode();
+        setSendModeState(mode);
+        setModeLoaded(true);
+      })();
     }, [fetchStats])
   );
 
@@ -40,7 +48,21 @@ export default function Dashboard() {
     setRefreshing(false);
   };
 
+  const toggleMode = async () => {
+    const next: SendMode = sendMode === 'auto' ? 'manual' : 'auto';
+    await setSendMode(next);
+    setSendModeState(next);
+  };
+
+  const onSendAll = async () => {
+    setRefreshing(true);
+    await sendAllPending();
+    await fetchStats();
+    setRefreshing(false);
+  };
+
   const syncColor = pendingCount > 0 ? '#f59e0b' : '#10b981';
+  const isManual = modeLoaded && sendMode === 'manual';
 
   return (
     <ScrollView
@@ -72,6 +94,30 @@ export default function Dashboard() {
         </View>
       </View>
 
+      {/* Mode Toggle */}
+      <TouchableOpacity
+        style={[styles.modeBtn, isManual ? styles.modeBtnManual : styles.modeBtnAuto]}
+        onPress={toggleMode}
+        disabled={!modeLoaded}
+      >
+        <Ionicons
+          name={isManual ? 'hand-left' : 'flash'}
+          size={20}
+          color="#fff"
+        />
+        <Text style={styles.modeBtnText}>
+          {isManual ? 'Manual Send' : 'Auto Send'}
+        </Text>
+        <Ionicons name="swap-horizontal" size={16} color="#ffffffaa" />
+      </TouchableOpacity>
+
+      {isManual && pendingCount > 0 && (
+        <TouchableOpacity style={styles.sendAllBtn} onPress={onSendAll}>
+          <Ionicons name="send" size={20} color="#fff" />
+          <Text style={styles.sendAllText}>Send All Pending ({pendingCount})</Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity style={styles.syncBtn} onPress={onRefresh}>
         <Ionicons name="sync" size={20} color="#fff" />
         <Text style={styles.syncText}>Sync Now</Text>
@@ -92,6 +138,33 @@ const styles = StyleSheet.create({
   },
   number: { fontSize: 32, fontWeight: '700', color: '#fafafa', marginTop: 8 },
   label: { fontSize: 13, color: '#a1a1aa', marginTop: 4 },
+  modeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    padding: 14,
+    gap: 8,
+    marginBottom: 8,
+  },
+  modeBtnAuto: {
+    backgroundColor: '#2563eb',
+  },
+  modeBtnManual: {
+    backgroundColor: '#7c3aed',
+  },
+  modeBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  sendAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ea580c',
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+    marginBottom: 8,
+  },
+  sendAllText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   syncBtn: {
     flexDirection: 'row',
     alignItems: 'center',
